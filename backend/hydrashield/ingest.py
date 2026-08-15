@@ -67,10 +67,10 @@ class Ingestor:
         self.store.merge_vertices(label, rows, set_clause)
         self.stats["vertices"] += len(rows)
 
-    def _edges(self, rel: str, rows: list[dict[str, Any]]) -> None:
+    def _edges(self, rel: str, rows: list[dict[str, Any]], source_label: str = "", destination_label: str = "") -> None:
         if not rows:
             return
-        self.store.merge_edges(rel, rows)
+        self.store.merge_edges(rel, rows, source_label=source_label, destination_label=destination_label)
         self.stats["edges"] += len(rows)
 
     def _upsert_catalog(self) -> None:
@@ -263,7 +263,7 @@ class Ingestor:
             }
             for name, version, *_rest in U.PACKAGE_RELEASES
         ]
-        self._edges(REL["has_release"], rows)
+        self._edges(REL["has_release"], rows, LABELS["package"], LABELS["version"])
 
     def _edges_depends(self) -> None:
         rows = [
@@ -274,7 +274,7 @@ class Ingestor:
             }
             for frm_n, frm_v, to_n, to_v in U.DEPENDENCIES
         ]
-        self._edges(REL["depends_on"], rows)
+        self._edges(REL["depends_on"], rows, LABELS["version"], LABELS["version"])
 
     def _edges_ownership(self) -> None:
         run_rows = [
@@ -301,9 +301,9 @@ class Ingestor:
             }
             for app in U.APPLICATIONS
         ]
-        self._edges(REL["runs"], run_rows)
-        self._edges(REL["has_lockfile"], lock_rows)
-        self._edges(REL["in_org"], org_rows)
+        self._edges(REL["runs"], run_rows, LABELS["service"], LABELS["application"])
+        self._edges(REL["has_lockfile"], lock_rows, LABELS["application"], LABELS["lockfile"])
+        self._edges(REL["in_org"], org_rows, LABELS["service"], LABELS["catalog"])
 
     def _edges_lockfiles(self) -> None:
         docs = {doc["name"]: doc for doc in self.lockfile_docs()}
@@ -329,7 +329,7 @@ class Ingestor:
                         "rel": self.ids.get("edge", f"res:{app['slug']}:{key}"),
                     }
                 )
-        self._edges(REL["resolves"], rows)
+        self._edges(REL["resolves"], rows, LABELS["lockfile"], LABELS["version"])
 
     def _edges_maintainers_infra(self) -> None:
         maint_rows = []
@@ -352,8 +352,8 @@ class Ingestor:
                         "rel": self.ids.get("edge", f"inf:{name}:{infra}"),
                     }
                 )
-        self._edges(REL["maintained_by"], maint_rows)
-        self._edges(REL["published_via"], infra_rows)
+        self._edges(REL["maintained_by"], maint_rows, LABELS["package"], LABELS["maintainer"])
+        self._edges(REL["published_via"], infra_rows, LABELS["package"], LABELS["infra"])
 
     def _edges_typosquat(self) -> None:
         rows = [
@@ -364,7 +364,7 @@ class Ingestor:
             }
             for left, right, dist in U.typosquat_pairs()
         ]
-        self._edges(REL["similar_name_to"], rows)
+        self._edges(REL["similar_name_to"], rows, LABELS["package"], LABELS["package"])
 
     def _edges_compromised(self) -> None:
         inc = U.INCIDENT
@@ -377,6 +377,8 @@ class Ingestor:
                     "rel": self.ids.get("edge", "compromised"),
                 }
             ],
+            LABELS["version"],
+            LABELS["incident"],
         )
 
     def add_lockfile(
@@ -407,9 +409,9 @@ class Ingestor:
             [{"vertex": svid, "name": name, "slug": name, "env": env, "criticality": criticality, "team": team, "deployed_at": resolved_at, "kind": "service"}],
             "n.name = row.name, n.slug = row.slug, n.env = row.env, n.criticality = row.criticality, n.team = row.team, n.deployed_at = row.deployed_at, n.kind = row.kind",
         )
-        self._edges(REL["runs"], [{"source": svid, "destination": avid, "rel": self.ids.get("edge", f"runs:{name}")}])
-        self._edges(REL["has_lockfile"], [{"source": avid, "destination": lvid, "rel": self.ids.get("edge", f"lock:{name}")}])
-        self._edges(REL["in_org"], [{"source": svid, "destination": CATALOG, "rel": self.ids.get("edge", f"org:{name}")}])
+        self._edges(REL["runs"], [{"source": svid, "destination": avid, "rel": self.ids.get("edge", f"runs:{name}")}], LABELS["service"], LABELS["application"])
+        self._edges(REL["has_lockfile"], [{"source": avid, "destination": lvid, "rel": self.ids.get("edge", f"lock:{name}")}], LABELS["application"], LABELS["lockfile"])
+        self._edges(REL["in_org"], [{"source": svid, "destination": CATALOG, "rel": self.ids.get("edge", f"org:{name}")}], LABELS["service"], LABELS["catalog"])
         res_rows = []
         for item in parsed.get("packages") or []:
             key = f"{item['name']}@{item['version']}"
@@ -423,5 +425,5 @@ class Ingestor:
                     "n.name = row.name, n.version = row.version, n.slug = row.slug, n.published_at = row.published_at, n.yanked = row.yanked, n.compromised = row.compromised, n.kind = row.kind",
                 )
             res_rows.append({"source": lvid, "destination": dest, "rel": self.ids.get("edge", f"res:{name}:{key}")})
-        self._edges(REL["resolves"], res_rows)
+        self._edges(REL["resolves"], res_rows, LABELS["lockfile"], LABELS["version"])
         return {"name": name, "resolved_at": resolved_at, "packages": len(res_rows)}

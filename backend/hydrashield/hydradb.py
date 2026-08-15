@@ -155,93 +155,46 @@ class HydraDB:
         return self.query(cypher, parameters, **kwargs)
 
     def merge_vertices(self, label: str, rows: list[dict[str, Any]], set_clause: str = "") -> int:
-        """Write vertices in HydraDB's supported mutation subset.
-
-        graph-node rejects ``MERGE … SET`` ("MERGE with following clauses").
-        Put properties in the CREATE/MERGE map, or SET only after MATCH.
-        """
+        """HydraDB vertex upsert: UNWIND / MERGE by id / SET label+properties."""
         del set_clause
         if not rows:
             return 0
         keys = [k for k in rows[0] if k != "vertex"]
-        create_map = ", ".join(["id: row.vertex", *[f"{k}: row.{k}" for k in keys]])
-        create_q = f"UNWIND $rows AS row CREATE (n:{label} {{{create_map}}})"
-        try:
-            for chunk in _chunks(rows, 40):
-                self.execute(create_q, {"rows": chunk})
-            return len(rows)
-        except HydraDBError:
-            pass
-        merge_q = f"UNWIND $rows AS row MERGE (n:{label} {{id: row.vertex}})"
-        set_q = (
-            "UNWIND $rows AS row MATCH (n {id: row.vertex}) SET "
-            + ", ".join(f"n.{k} = row.{k}" for k in keys)
-            if keys
-            else None
-        )
-        try:
-            for chunk in _chunks(rows, 40):
-                self.execute(merge_q, {"rows": chunk})
-                if set_q:
-                    self.execute(set_q, {"rows": chunk})
-            return len(rows)
-        except HydraDBError:
-            pass
-        for row in rows:
-            props = {k: v for k, v in row.items() if k != "vertex"}
-            single_map = ", ".join(["id: $vertex", *[f"{k}: ${k}" for k in props]])
-            try:
-                self.execute(
-                    f"CREATE (n:{label} {{{single_map}}})",
-                    {"vertex": row["vertex"], **props},
-                )
-            except HydraDBError:
-                self.execute(f"MERGE (n:{label} {{id: $vertex}})", {"vertex": row["vertex"]})
-                if props:
-                    assignments = ", ".join(f"n.{k} = ${k}" for k in props)
-                    self.execute(
-                        f"MATCH (n {{id: $vertex}}) SET {assignments}",
-                        {"vertex": row["vertex"], **props},
-                    )
+        assignments = ", ".join([f"n:{label}", *[f"n.{k} = row.{k}" for k in keys]])
+        cypher = f"UNWIND $rows AS row MERGE (n {{id: row.vertex}}) SET {assignments}"
+        for chunk in _chunks(rows, 40):
+            self.execute(cypher, {"rows": chunk})
         return len(rows)
 
-    def merge_edges(self, rel: str, rows: list[dict[str, Any]]) -> int:
+    def merge_edges(
+        self,
+        rel: str,
+        rows: list[dict[str, Any]],
+        source_label: str = "",
+        destination_label: str = "",
+    ) -> int:
+        """HydraDB edge writes: one-hop CREATE by integer id, or labeled MATCH CREATE."""
         if not rows:
             return 0
         create_q = (
             "UNWIND $rows AS row "
-            "MATCH (s {id: row.source}), (d {id: row.destination}) "
-            f"CREATE (s)-[:{rel}]->(d)"
-        )
-        merge_q = (
-            "UNWIND $rows AS row "
-            "MATCH (s {id: row.source}), (d {id: row.destination}) "
-            f"MERGE (s)-[:{rel}]->(d)"
+            f"CREATE (s {{id: row.source}})-[:{rel}]->(d {{id: row.destination}})"
         )
         try:
             for chunk in _chunks(rows, 40):
                 self.execute(create_q, {"rows": chunk})
             return len(rows)
         except HydraDBError:
-            pass
-        try:
-            for chunk in _chunks(rows, 40):
-                self.execute(merge_q, {"rows": chunk})
-            return len(rows)
-        except HydraDBError:
-            pass
-        for row in rows:
-            params = {"source": row["source"], "destination": row["destination"]}
-            try:
-                self.execute(
-                    f"MATCH (s {{id: $source}}), (d {{id: $destination}}) CREATE (s)-[:{rel}]->(d)",
-                    params,
-                )
-            except HydraDBError:
-                self.execute(
-                    f"MATCH (s {{id: $source}}), (d {{id: $destination}}) MERGE (s)-[:{rel}]->(d)",
-                    params,
-                )
+            if not source_label or not destination_label:
+                raise
+        match_q = (
+            "UNWIND $rows AS row "
+            f"MATCH (s:{source_label} {{id: row.source}}), "
+            f"(d:{destination_label} {{id: row.destination}}) "
+            f"CREATE (s)-[:{rel}]->(d)"
+        )
+        for chunk in _chunks(rows, 40):
+            self.execute(match_q, {"rows": chunk})
         return len(rows)
 
     def find_version(self, name: str, version: str) -> dict[str, Any] | None:
