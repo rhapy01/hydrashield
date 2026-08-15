@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { analyze, fmtTime, ingest, type AnalyzeResponse, type ExposedService } from "./api";
+import { analyze, fmtTime, ingest, whyLabel, type AnalyzeResponse, type ExposedService } from "./api";
 import { BlastGraph } from "./BlastGraph";
 
 function Mark() {
@@ -17,6 +17,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<string>("checkout-api");
   const [showPlan, setShowPlan] = useState(false);
+  const [tab, setTab] = useState<"exposed" | "contained">("exposed");
   const [queryName, setQueryName] = useState<string>("direct_lockfile_hits");
 
   async function run(seed: boolean) {
@@ -44,7 +45,14 @@ export function App() {
     [data, selected],
   );
 
+  const hotIds = useMemo(() => {
+    if (!selectedRow) return [];
+    const ids = [selectedRow.id, ...selectedRow.path.map((hop) => hop.id).filter((id): id is number => id != null)];
+    return ids;
+  }, [selectedRow]);
+
   const query = data?.queries.find((item) => item.name === queryName) ?? data?.queries[0];
+  const featured = ["direct_lockfile_hits", "ms_paths", "sp_path", "reverse_dependents", "shared_infra", "typosquats"];
 
   return (
     <div className="app">
@@ -55,29 +63,29 @@ export function App() {
             Hydra<span>Shield</span>
           </div>
         </div>
-        <div className="tag">Incident response for dependency graphs</div>
+        <div className="tag">360-second blast radius</div>
         <div className="top-meta">
-          <span>VantaPay · npm</span>
-          <span className="pill live">{data?.engine === "hydradb" ? "HydraDB · live" : "HydraDB required"}</span>
+          <span>VantaPay · npm · Track 2A</span>
+          <span className={`pill live`}>{data?.engine === "hydradb" ? "HydraDB · live graph" : "HydraDB required"}</span>
         </div>
       </header>
 
       <section className="alert">
         <div>
           <h1>
-            Package <span className="pkg">signal-bus@2.4.1</span> compromised at 09:00
+            <span className="pkg">signal-bus@2.4.1</span> was live for six minutes. Who was actually exposed?
           </h1>
           <p>
-            Which VantaPay services were exposed by 09:06, through which dependency path, and what
-            should we upgrade first? Temporal reverse-closure over HydraDB — not a scanner match list.
+            {data?.briefing ||
+              "Temporal reverse-closure on HydraDB: Service → Lockfile → PackageVersion, only where lock.resolved_at sits inside 09:00–09:06 UTC."}
           </p>
         </div>
         <div className="actions">
           <button className="btn" disabled={busy} onClick={() => void run(true)}>
-            {busy ? "Querying…" : "Ingest + analyze"}
+            {busy ? "Querying HydraDB…" : "Ingest + analyze"}
           </button>
           <button className="btn primary" disabled={!data} onClick={() => setShowPlan(true)}>
-            Generate remediation plan
+            Containment plan
           </button>
         </div>
       </section>
@@ -86,7 +94,7 @@ export function App() {
         <div className={`status ${error ? "error" : ""}`}>
           {error
             ? error
-            : "Waiting for HydraDB. Every query in this product is OpenCypher on graph-node — there is no local graph."}
+            : "Waiting for HydraDB. Every number on this page is OpenCypher or algo.SPpaths / MSpaths / SSpaths — there is no local graph."}
         </div>
       )}
 
@@ -96,23 +104,29 @@ export function App() {
             <div className="kpis">
               <div className="kpi hot">
                 <b>{data.summary.services_exposed}</b>
-                <span>services exposed</span>
+                <span>exposed in-window</span>
               </div>
               <div className="kpi hot">
                 <b>{data.summary.p0_exposed}</b>
                 <span>P0 production</span>
               </div>
               <div className="kpi">
-                <b>{data.summary.ecosystem_dependents}</b>
-                <span>ecosystem dependents</span>
+                <b>{data.summary.services_safe}</b>
+                <span>contained / not in window</span>
               </div>
               <div className="kpi">
-                <b>{data.summary.window_seconds}s</b>
-                <span>live malicious window</span>
+                <b>{data.summary.scanner_false_positives}</b>
+                <span>scanner over-flags</span>
               </div>
             </div>
+            <div className="contrast">
+              <b>Why not grep?</b> A lockfile name search hits {data.contrast.scanner_name_hits} services.
+              HydraDB’s time window keeps {data.contrast.hydrashield_exposed}. The extras —
+              {data.contrast.false_positives.slice(0, 4).map((name) => ` ${name}`).join(",")}
+              {data.contrast.false_positives.length > 4 ? "…" : ""} — pinned before 09:00 or after the yank.
+            </div>
             <div className="graph-wrap">
-              <BlastGraph data={data} selected={selected} onSelect={setSelected} />
+              <BlastGraph data={data} selected={selected} hotIds={hotIds} onSelect={setSelected} />
               <div className="legend">
                 <span>
                   <i className="swatch" style={{ background: "#ff4d6d" }} /> compromised
@@ -123,6 +137,7 @@ export function App() {
                 <span>
                   <i className="swatch" style={{ background: "#3ee0b4" }} /> service
                 </span>
+                <span>click a service · path highlights from algo.MSpaths</span>
               </div>
             </div>
             <div className="timeline">
@@ -149,38 +164,62 @@ export function App() {
           </section>
 
           <aside className="side">
-            <h2>Ranked exposure</h2>
-            <div className="list">
-              {data.exposed.map((row) => (
-                <button
-                  key={row.name}
-                  className={`svc ${selected === row.name ? "active" : ""}`}
-                  onClick={() => {
-                    setSelected(row.name);
-                    setShowPlan(false);
-                  }}
-                >
-                  <span className={`crit ${row.criticality}`}>{row.criticality}</span>
-                  <span>
-                    <div className="name">{row.name}</div>
-                    <div className="meta">
-                      {row.env} · {row.team} · depth {row.depth} · {fmtTime(row.resolved_at)}
-                    </div>
-                  </span>
-                  <span className="score">{row.score.toFixed(2)}</span>
-                </button>
-              ))}
+            <div className="tabs">
+              <button className={tab === "exposed" ? "on" : ""} onClick={() => setTab("exposed")}>
+                Exposed ({data.exposed.length})
+              </button>
+              <button className={tab === "contained" ? "on" : ""} onClick={() => setTab("contained")}>
+                Contained ({data.contained.length})
+              </button>
             </div>
+            {tab === "exposed" ? (
+              <div className="list">
+                {data.exposed.map((row) => (
+                  <button
+                    key={row.name}
+                    className={`svc ${selected === row.name ? "active" : ""}`}
+                    onClick={() => {
+                      setSelected(row.name);
+                      setShowPlan(false);
+                    }}
+                  >
+                    <span className={`crit ${row.criticality}`}>{row.criticality}</span>
+                    <span>
+                      <div className="name">{row.name}</div>
+                      <div className="meta">
+                        {row.env} · {row.team} · depth {row.depth} · {fmtTime(row.resolved_at)}
+                      </div>
+                    </span>
+                    <span className="score">{row.score.toFixed(2)}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="list">
+                {data.contained.map((row) => (
+                  <div key={row.name} className="svc contained">
+                    <span className={`crit ${row.criticality}`}>{row.criticality}</span>
+                    <span>
+                      <div className="name">{row.name}</div>
+                      <div className="meta">
+                        {whyLabel(row.why)}
+                        {row.pinned_version ? ` · signal-bus@${row.pinned_version}` : ""}
+                        {row.resolved_at ? ` · ${fmtTime(row.resolved_at)}` : ""}
+                      </div>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             {showPlan ? (
               <div className="plan">
-                <h3>Remediation sequence</h3>
+                <h3>Containment sequence</h3>
                 <p>{data.remediation.summary}</p>
                 <ol>
                   {data.remediation.steps.map((step) => (
                     <li key={step.package}>
                       <code>{step.package}</code>
-                      {step.to_version ? `@${step.to_version}` : ""} — {step.reason} Residual{" "}
-                      {step.residual}.
+                      {step.to_version ? `@${step.to_version}` : ""} — {step.reason} Residual {step.residual}.
                     </li>
                   ))}
                   <li>{data.remediation.rotate.reason}</li>
@@ -197,7 +236,8 @@ export function App() {
                 </ol>
               </div>
             ) : (
-              selectedRow && (
+              selectedRow &&
+              tab === "exposed" && (
                 <div className="evidence">
                   <h3>
                     Evidence · {selectedRow.name} · {selectedRow.env}
@@ -236,13 +276,16 @@ export function App() {
               </ul>
             </div>
             <div className="nb">
-              <h3>Shared publishing infra</h3>
+              <h3>Next-hop worm (same OIDC)</h3>
+              <p className="nb-note">{data.next_hop.reason}</p>
               <ul>
-                {data.infrastructure.slice(0, 6).map((row) => (
-                  <li key={row.name + row.infra}>
-                    <code>{row.name}</code> · {row.infra}
-                  </li>
-                ))}
+                {(data.next_hop.packages.length ? data.next_hop.packages : data.infrastructure)
+                  .slice(0, 6)
+                  .map((row) => (
+                    <li key={row.name + row.infra}>
+                      <code>{row.name}</code> · {row.infra}
+                    </li>
+                  ))}
               </ul>
             </div>
             <div className="nb">
@@ -258,7 +301,7 @@ export function App() {
           </section>
           <section className="drawer">
             <h2>
-              OpenCypher on HydraDB ·{" "}
+              HydraDB queries this page ran ·{" "}
               <select
                 value={query?.name}
                 onChange={(event) => setQueryName(event.target.value)}
@@ -267,6 +310,7 @@ export function App() {
                 {data.queries.map((item) => (
                   <option key={item.name} value={item.name}>
                     {item.name}
+                    {featured.includes(item.name) ? " ★" : ""}
                   </option>
                 ))}
               </select>
@@ -277,7 +321,7 @@ export function App() {
                 {"\n\n"}
                 {JSON.stringify(query.parameters, null, 2)}
                 {"\n\n"}
-                {query.row_count} rows · snapshot-consistent read
+                {query.row_count} rows · snapshot-consistent read · engine {data.engine}
               </pre>
             )}
           </section>

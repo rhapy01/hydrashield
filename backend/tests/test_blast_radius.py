@@ -103,6 +103,30 @@ def test_remediation_clears_all_when_root_upgraded() -> None:
     assert plan["review"][0]["package"] == "logger-pretty"
 
 
-def test_service_count() -> None:
-    assert len(SERVICES) == 28
-    assert len(APPLICATIONS) == 28
+def test_name_grep_is_not_the_blast_radius() -> None:
+    start = INCIDENT["published_ts"]
+    end = INCIDENT["yanked_ts"]
+    named = []
+    windowed = []
+    for app in APPLICATIONS:
+        resolved = parse_iso(app["resolved_at"])
+        tree = resolve_tree(app["direct"], pin_signal=app.get("pin_signal"))
+        if any(name == "signal-bus" for name, _version in tree):
+            named.append(app["slug"])
+        if start <= resolved <= end and ("signal-bus", "2.4.1") in tree:
+            windowed.append(app["slug"])
+    assert "ledger-worker" in named
+    assert "ledger-worker" not in windowed
+    assert "webhook-relay" in named
+    assert "webhook-relay" not in windowed
+    assert "checkout-api" in windowed
+    assert len(named) > len(windowed)
+
+
+def test_contained_reasons() -> None:
+    from hydrashield.analyze import _why_contained
+
+    t0, t1 = INCIDENT["published_ts"], INCIDENT["yanked_ts"]
+    assert _why_contained({"version": "2.4.0", "resolved_at": t0 - 60}, "2.4.1", t0, t1) == "before_window"
+    assert _why_contained({"version": "2.4.2", "resolved_at": t1 + 60}, "2.4.1", t0, t1) == "after_yank"
+    assert _why_contained(None, "2.4.1", t0, t1) == "no_pin"

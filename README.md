@@ -31,8 +31,9 @@ HydraDB is not a cache sitting under a SQL model. The product’s central action
 | OpenCypher `MATCH` with bounded variable-length `DEPENDS_ON*1..6` | Ecosystem reverse closure |
 | Directed one-type hops `Service-[:RUNS]->Application-[:HAS_LOCKFILE]->Lockfile-[:RESOLVES]->PackageVersion` | Org exposure |
 | `WHERE lock.resolved_at >= $t0 AND lock.resolved_at <= $t1` | Temporal window (the 09:00–09:06 question) |
-| `algo.SPpaths` | Evidence path between a direct dependency and the compromised version |
-| `algo.SSpaths` | Reverse paths out of the compromised node |
+| `algo.MSpaths` | Batch evidence paths from lockfile pins to the compromised version |
+| `algo.SPpaths` | Fallback single-pair evidence path |
+| `algo.SSpaths` | Reverse dependents out of the compromised node |
 | Causal bookmarks + optional `strong` consistency on the first read | Report does not mix topology from two snapshots |
 | `UNWIND` / `MERGE` batches | Idempotent ingest |
 
@@ -104,15 +105,15 @@ These cover lockfile parsing, temporal window membership, path evidence, ranking
 
 ## Demo script (≈3 minutes)
 
-1. Open the incident workspace. The alert is already `signal-bus@2.4.1` at 09:00.
-2. Click **Ingest + analyze**. KPIs show exposed services, P0 count, ecosystem dependents, and the 360s window.
-3. The radial graph is the reverse-closure: compromised version at the center, package path in blue, VantaPay services on the outer ring.
-4. Click `checkout-api`. Evidence expands: `checkout-api → payments-core@12.0.0 → event-router@0.9.3 → signal-bus@2.4.1`.
-5. Point at the neighborhood strip: `logger-pretty` / `config-merge` share maintainer `mara-okonkwo` and GitHub Actions OIDC; `signel-bus` is a typosquat.
-6. Click **Generate remediation plan**. First action: upgrade `signal-bus@2.4.2`, which clears every time-window hit. Then rotate CI/npm credentials and block typosquats.
-7. Open the Cypher drawer. The query that produced the headline is HydraDB OpenCypher, not a fixture lookup.
+Full beats: [docs/JUDGES.md](docs/JUDGES.md).
 
-Services that locked **before** 09:00 (`ledger-worker` on `2.4.0`) or **after** the yank (`webhook-relay` on `2.4.2`) are correctly absent from the exposed list. That is the temporal argument.
+1. Headline: `signal-bus@2.4.1` live for six minutes. HydraDB pill is green.
+2. Yellow strip: name-grep over-flags vs in-window exposure. Click **Contained** — `ledger-worker` (08:41 / 2.4.0) and `webhook-relay` (09:12 / 2.4.2).
+3. Click `checkout-api`. Path highlights: `payments-core → event-router → signal-bus@2.4.1` from `algo.MSpaths`.
+4. Next-hop OIDC + typosquats. **Containment plan**: upgrade `2.4.2` first.
+5. Cypher drawer: `direct_lockfile_hits` is the 09:00–09:06 query.
+
+Services that locked **before** 09:00 or **after** the yank are on Contained, not Exposed. That is the temporal argument a scanner cannot make.
 
 ## Repository layout
 

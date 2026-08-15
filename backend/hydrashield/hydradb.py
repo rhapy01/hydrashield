@@ -221,6 +221,55 @@ class HydraDB:
             log_name="direct_lockfile_hits",
         )
 
+    def package_pins(self, name: str) -> list[dict[str, Any]]:
+        """Every org lockfile that resolves any version of a package — time and version included."""
+        return self.rows(
+            "MATCH (svc:Service)-[:RUNS]->(app:Application)-[:HAS_LOCKFILE]->(lock:LockfileSnapshot)"
+            "-[:RESOLVES]->(pv:PackageVersion) "
+            "WHERE pv.name = $name "
+            "RETURN svc.id AS service_id, svc.name AS name, svc.env AS env, "
+            "svc.criticality AS criticality, svc.team AS team, app.name AS application, "
+            "lock.id AS lock_id, lock.resolved_at AS resolved_at, "
+            "pv.id AS version_id, pv.version AS version",
+            {"name": name},
+            log_name="package_pins",
+        )
+
+    def many_shortest_paths(
+        self, sources: list[int], target: int, rel: str, max_len: int = 6
+    ) -> dict[int, list[int]]:
+        """Batch evidence paths via algo.MSpaths (one snapshot, no client fan-out)."""
+        unique = [int(s) for s in dict.fromkeys(sources) if int(s) != int(target)]
+        out: dict[int, list[int]] = {}
+        if not unique:
+            return out
+        try:
+            rows = self.rows(
+                "CALL algo.MSpaths({"
+                "sourceLabel: 'PackageVersion', sourceProperty: 'id', sourceValues: $sources, "
+                "targetLabel: 'PackageVersion', targetProperty: 'id', targetValues: $targets, "
+                "pairwise: false, "
+                f"relTypes: ['{rel}'], relDirection: 'outgoing', maxLen: {int(max_len)}, "
+                "pathCount: 1, resultLimit: 120}) "
+                "YIELD path RETURN path",
+                {"sources": unique, "targets": [int(target)]},
+                log_name="ms_paths",
+            )
+        except HydraDBError:
+            rows = []
+        for row in rows:
+            ids = _path_ids(row.get("path"))
+            if len(ids) >= 2:
+                src = ids[0]
+                if src not in out or len(ids) < len(out[src]):
+                    out[src] = ids
+        missing = [s for s in unique if s not in out]
+        for src in missing:
+            path = self.shortest_path(src, target, rel, max_len)
+            if path:
+                out[src] = path
+        return out
+
     def reverse_dependents(self, bad_id: int, max_len: int = 6) -> list[dict[str, Any]]:
         try:
             rows = self.rows(

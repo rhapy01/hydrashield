@@ -35,6 +35,32 @@ def _unique_edges(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def _latest_pin(pins: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for row in pins:
+        name = str(row.get("name") or "")
+        if not name:
+            continue
+        prev = latest.get(name)
+        if prev is None or int(row.get("resolved_at") or 0) >= int(prev.get("resolved_at") or 0):
+            latest[name] = row
+    return latest
+
+
+def _why_contained(pin: dict[str, Any] | None, bad_version: str, t0: int, t1: int) -> str:
+    if not pin:
+        return "no_pin"
+    resolved = int(pin.get("resolved_at") or 0)
+    version = str(pin.get("version") or "")
+    if resolved < t0:
+        return "before_window"
+    if resolved > t1:
+        return "after_yank"
+    if version != bad_version:
+        return "other_version"
+    return "outside_window"
+
+
 class Analyzer:
     def __init__(self, store: GraphStore, id_map: dict[str, int] | None = None) -> None:
         self.store = store
@@ -66,11 +92,25 @@ class Analyzer:
         bad_id = int(bad["id"])
 
         hits = self.store.lockfile_hits(bad_id, start_ts, end_ts)
+        pins = self.store.package_pins(package)
         reverse = self.store.reverse_dependents(bad_id)
         maintainers = self.store.shared_maintainers(package)
         infra = self.store.shared_infra(package)
         typos = self.store.typosquats(package)
         fleet = self.store.list_services()
+
+        lock_candidates: dict[int, list[int]] = {}
+        all_sources: list[int] = []
+        for hit in hits:
+            lock_id = int(hit["lock_id"])
+            if lock_id in lock_candidates:
+                continue
+            resolved = self.store.lockfile_resolves(lock_id)
+            ids = [int(row["id"]) for row in resolved if row.get("id") is not None]
+            candidates = [vid for vid in ids if vid != bad_id] or ([bad_id] if bad_id in ids else ids)
+            lock_candidates[lock_id] = candidates
+            all_sources.extend(candidates)
+        batched_paths = self.store.many_shortest_paths(all_sources, bad_id, REL["depends_on"], 6)
 
         exposed: list[dict[str, Any]] = []
         graph_nodes: dict[int, dict[str, Any]] = {
@@ -86,7 +126,7 @@ class Analyzer:
 
         for hit in hits:
             lock_id = int(hit["lock_id"])
-            path_ids = self._evidence_path(lock_id, bad_id)
+            path_ids = self._pick_path(lock_candidates.get(lock_id) or [], bad_id, batched_paths)
             path = []
             for vid in path_ids:
                 node = self.store.vertex(vid) or {}
@@ -148,6 +188,7 @@ class Analyzer:
         unique_infra = _dedupe(infra, "name")
         unique_typos = _dedupe(typos, "name")
         shared_pkgs = [row["name"] for row in unique_maintainers if row["name"] != package]
+        oidc = [row for row in unique_infra if "oidc" in str(row.get("infra_slug") or row.get("infra") or "").lower()]
         plan = remediation_plan(
             compromised_package=package,
             safe_version=safe_version,
@@ -171,20 +212,31 @@ class Analyzer:
             graph_edges.append({"source": vid, "target": bad_id, "rel": REL["depends_on"]})
 
         exposed_names = {row["name"] for row in ranked}
+        pin_by_service = _latest_pin(pins)
+        scanner_name = {row["name"] for row in pins}
+        scanner_version = {row["name"] for row in pins if str(row.get("version")) == version}
         fleet_rows = []
+        contained: list[dict[str, Any]] = []
         for svc in fleet:
             name = svc.get("name")
             hit = next((row for row in ranked if row["name"] == name), None)
-            fleet_rows.append(
-                {
-                    **svc,
-                    "exposed": name in exposed_names,
-                    "score": hit["score"] if hit else 0,
-                    "depth": hit["depth"] if hit else None,
-                    "resolved_at": hit["resolved_at"] if hit else None,
-                }
-            )
+            pin = pin_by_service.get(name)
+            why = _why_contained(pin, version, start_ts, end_ts) if not hit else "exposed"
+            row = {
+                **svc,
+                "exposed": name in exposed_names,
+                "score": hit["score"] if hit else 0,
+                "depth": hit["depth"] if hit else None,
+                "resolved_at": hit["resolved_at"] if hit else (pin or {}).get("resolved_at"),
+                "pinned_version": (pin or {}).get("version"),
+                "why": why,
+            }
+            fleet_rows.append(row)
+            if not hit:
+                contained.append(row)
         fleet_rows.sort(key=lambda item: (-int(item.get("exposed") or 0), -(item.get("score") or 0), item.get("name") or ""))
+        contained.sort(key=lambda item: (item.get("why") or "", item.get("name") or ""))
+        false_positives = sorted(scanner_name - exposed_names)
 
         timeline = sorted(
             [
@@ -203,8 +255,28 @@ class Analyzer:
         timeline.append({"at": end_ts, "kind": "yank", "label": f"{package}@{version} yanked", "severity": "ok"})
 
         production = [row for row in ranked if row["env"] == "production"]
+        p0 = [row for row in ranked if row["criticality"] == "P0"]
+        briefing = (
+            f"{len(ranked)} VantaPay services resolved {package}@{version} while it was live "
+            f"({window_len}s). {len(p0)} of those are P0 production. "
+            f"A name grep of lockfiles would also flag {len(false_positives)} services that "
+            f"never resolved the malicious version in-window — including pins before 09:00 and after the yank."
+        )
         return {
             "engine": "hydradb",
+            "briefing": briefing,
+            "contrast": {
+                "scanner_name_hits": len(scanner_name),
+                "scanner_version_hits": len(scanner_version),
+                "hydrashield_exposed": len(ranked),
+                "false_positives": false_positives,
+                "why": "Lockfile grep has no time. HydraDB matches Service→Lockfile→PackageVersion only where lock.resolved_at sits inside the publish/yank window.",
+            },
+            "contained": contained,
+            "next_hop": {
+                "reason": "Packages that publish through the same GitHub Actions OIDC identity the worm reused.",
+                "packages": oidc,
+            },
             "incident": {
                 **inc,
                 "package": package,
@@ -219,11 +291,12 @@ class Analyzer:
                 "services_exposed": len(ranked),
                 "services_safe": max(len(fleet_rows) - len(ranked), 0),
                 "production_exposed": len(production),
-                "p0_exposed": len([row for row in ranked if row["criticality"] == "P0"]),
+                "p0_exposed": len(p0),
                 "ecosystem_dependents": len(reverse_nodes),
                 "shared_maintainers": len({row.get("maintainer") for row in unique_maintainers}),
                 "typosquats": len(unique_typos),
                 "window_seconds": window_len,
+                "scanner_false_positives": len(false_positives),
             },
             "exposed": ranked,
             "fleet": fleet_rows,
@@ -237,20 +310,26 @@ class Analyzer:
             "queries": list(self.store.query_log),
         }
 
-    def _evidence_path(self, lock_id: int, bad_id: int) -> list[int]:
-        resolved = self.store.lockfile_resolves(lock_id)
-        ids = [int(row["id"]) for row in resolved if row.get("id") is not None]
-        candidates = [vid for vid in ids if vid != bad_id] or ([bad_id] if bad_id in ids else ids)
+    def _pick_path(
+        self, candidates: list[int], bad_id: int, batched: dict[int, list[int]]
+    ) -> list[int]:
         best: list[int] = []
         for src in candidates:
-            path = self.store.shortest_path(src, bad_id, REL["depends_on"], 6)
+            path = batched.get(src) or []
             if not path:
                 path = self._hydra_bfs(src, bad_id, REL["depends_on"], 6)
             if path and (not best or len(path) < len(best)):
                 best = path
-        if not best and bad_id in ids:
+        if not best and bad_id in candidates:
             return [bad_id]
         return best
+
+    def _evidence_path(self, lock_id: int, bad_id: int) -> list[int]:
+        resolved = self.store.lockfile_resolves(lock_id)
+        ids = [int(row["id"]) for row in resolved if row.get("id") is not None]
+        candidates = [vid for vid in ids if vid != bad_id] or ([bad_id] if bad_id in ids else ids)
+        batched = self.store.many_shortest_paths(candidates, bad_id, REL["depends_on"], 6)
+        return self._pick_path(candidates, bad_id, batched)
 
     def _hydra_bfs(self, source: int, target: int, rel: str, max_len: int) -> list[int]:
         """1-hop MATCH walk on HydraDB when algo.SPpaths does not return a path."""

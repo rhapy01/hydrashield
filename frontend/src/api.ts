@@ -1,4 +1,4 @@
-export type PathHop = { name: string; version: string };
+export type PathHop = { name: string; version: string; id?: number };
 
 export type ExposedService = {
   id: number;
@@ -15,6 +15,18 @@ export type ExposedService = {
   score: number;
   path: PathHop[];
   path_packages: string[];
+};
+
+export type ContainedService = {
+  id: number;
+  name: string;
+  env: string;
+  criticality: string;
+  team: string;
+  exposed: boolean;
+  why: string;
+  pinned_version?: string;
+  resolved_at?: number;
 };
 
 export type GraphNode = {
@@ -38,6 +50,16 @@ export type QueryLog = {
 
 export type AnalyzeResponse = {
   engine: "hydradb";
+  briefing: string;
+  contrast: {
+    scanner_name_hits: number;
+    scanner_version_hits: number;
+    hydrashield_exposed: number;
+    false_positives: string[];
+    why: string;
+  };
+  contained: ContainedService[];
+  next_hop: { reason: string; packages: { name: string; infra: string }[] };
   incident: {
     slug: string;
     title: string;
@@ -53,12 +75,14 @@ export type AnalyzeResponse = {
   summary: {
     services_total: number;
     services_exposed: number;
+    services_safe: number;
     production_exposed: number;
     p0_exposed: number;
     ecosystem_dependents: number;
     shared_maintainers: number;
     typosquats: number;
     window_seconds: number;
+    scanner_false_positives: number;
   };
   exposed: ExposedService[];
   ecosystem: { id: number; name: string; version: string }[];
@@ -67,7 +91,14 @@ export type AnalyzeResponse = {
   typosquats: { name: string; downloads: number }[];
   remediation: {
     summary: string;
-    steps: { action: string; package: string; to_version?: string; reason: string; services_fixed?: number; residual?: number }[];
+    steps: {
+      action: string;
+      package: string;
+      to_version?: string;
+      reason: string;
+      services_fixed?: number;
+      residual?: number;
+    }[];
     review: { action: string; package: string; reason: string }[];
     block: { action: string; package: string; reason: string }[];
     rotate: { action: string; reason: string };
@@ -100,4 +131,12 @@ export async function analyze(): Promise<AnalyzeResponse> {
 
 export function fmtTime(unix: number): string {
   return new Date(unix * 1000).toISOString().slice(11, 19) + "Z";
+}
+
+export function whyLabel(why: string): string {
+  if (why === "before_window") return "Pinned before 09:00";
+  if (why === "after_yank") return "Resolved after yank";
+  if (why === "other_version") return "Different version in-window";
+  if (why === "no_pin") return "Never resolved signal-bus";
+  return why;
 }

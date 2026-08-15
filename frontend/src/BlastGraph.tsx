@@ -3,6 +3,7 @@ import type { AnalyzeResponse, GraphNode } from "./api";
 type Props = {
   data: AnalyzeResponse;
   selected?: string;
+  hotIds?: number[];
   onSelect: (name: string) => void;
 };
 
@@ -19,7 +20,7 @@ function radiusFor(kind: string, index: number): number {
   return 230;
 }
 
-export function BlastGraph({ data, selected, onSelect }: Props) {
+export function BlastGraph({ data, selected, hotIds = [], onSelect }: Props) {
   const width = 920;
   const height = 520;
   const cx = width / 2;
@@ -47,6 +48,7 @@ export function BlastGraph({ data, selected, onSelect }: Props) {
   place(byKind("ecosystem"), 140, Math.PI / 8);
   place(byKind("service"), 230);
 
+  const hot = new Set(hotIds);
   const edges = data.graph.edges.filter((e) => layout.has(e.source) && layout.has(e.target));
 
   return (
@@ -54,7 +56,8 @@ export function BlastGraph({ data, selected, onSelect }: Props) {
       {edges.map((edge, i) => {
         const a = layout.get(edge.source)!;
         const b = layout.get(edge.target)!;
-        const hot = a.node.kind === "compromised" || b.node.kind === "compromised";
+        const onPath = hot.has(edge.source) && hot.has(edge.target);
+        const compromised = a.node.kind === "compromised" || b.node.kind === "compromised";
         return (
           <line
             key={`${edge.source}-${edge.target}-${i}`}
@@ -62,13 +65,13 @@ export function BlastGraph({ data, selected, onSelect }: Props) {
             y1={a.y}
             x2={b.x}
             y2={b.y}
-            stroke={hot ? "rgba(255,77,109,0.45)" : "rgba(90,167,255,0.22)"}
-            strokeWidth={hot ? 1.6 : 1}
+            stroke={onPath ? "rgba(255,77,109,0.85)" : compromised ? "rgba(255,77,109,0.28)" : "rgba(90,167,255,0.18)"}
+            strokeWidth={onPath ? 2.4 : compromised ? 1.4 : 1}
           />
         );
       })}
       {[...layout.values()].map(({ x, y, node }) => {
-        const active = selected === node.name || selected === node.label;
+        const active = selected === node.name || selected === node.label || hot.has(node.id);
         const r = node.kind === "compromised" ? 11 : node.kind === "service" ? 7 : 5.5;
         return (
           <g
