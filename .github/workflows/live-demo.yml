@@ -1,0 +1,92 @@
+name: Live demo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: live-demo
+  cancel-in-progress: true
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start HydraDB + API + UI
+        run: |
+          docker compose pull hydradb
+          docker compose up -d --build
+          echo "Waiting for HydraDB /readyz..."
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:9090/readyz >/dev/null 2>&1; then
+              echo "HydraDB ready"
+              break
+            fi
+            sleep 4
+          done
+          echo "Waiting for API health..."
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+              echo "API up"
+              break
+            fi
+            sleep 4
+          done
+          curl -fsS -X POST http://127.0.0.1:8000/api/ingest || true
+          curl -fsS http://127.0.0.1:8000/api/health || true
+          docker compose ps
+
+      - name: Install cloudflared
+        run: |
+          curl -fsSL -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x cloudflared
+          sudo mv cloudflared /usr/local/bin/cloudflared
+          cloudflared --version
+
+      - name: Open public tunnel
+        run: |
+          if ! command -v cloudflared >/dev/null 2>&1; then
+            curl -fsSL -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+            chmod +x cloudflared
+            sudo mv cloudflared /usr/local/bin/cloudflared
+          fi
+          cloudflared tunnel --no-autoupdate --url http://127.0.0.1:5173 > /tmp/cloudflared.log 2>&1 &
+          echo $! > /tmp/cloudflared.pid
+          URL=""
+          for i in $(seq 1 30); do
+            URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -1 || true)
+            if [ -n "$URL" ]; then
+              break
+            fi
+            sleep 2
+          done
+          if [ -z "$URL" ]; then
+            echo "Tunnel URL not found"
+            cat /tmp/cloudflared.log
+            exit 1
+          fi
+          echo "LIVE_URL=$URL" >> "$GITHUB_ENV"
+          echo "## HydraShield live demo" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Open:** $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "HydraDB is running in this job. Click Ingest + analyze if the graph is empty." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "This URL stays up until the workflow is cancelled or times out (90 minutes)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Public demo URL: $URL"
+
+      - name: Keep demo alive
+        run: |
+          echo "Live at $LIVE_URL"
+          # Re-print every 5 minutes so it is easy to find in the log.
+          for i in $(seq 1 16); do
+            echo "[$i/16] still live: $LIVE_URL"
+            curl -fsS -o /dev/null -w "ui %{http_code}\n" "$LIVE_URL" || true
+            sleep 300
+          done

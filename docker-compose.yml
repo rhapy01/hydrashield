@@ -1,0 +1,64 @@
+services:
+  hydradb:
+    image: ghcr.io/hydra-db/hydradb:latest
+    container_name: hydrashield-hydradb
+    ports:
+      - "7687:7687"
+      - "8443:8443"
+      - "9090:9090"
+    environment:
+      CLOUD_PROVIDER: local
+      LOCAL_PATH: /data/store
+      GRAPH_NAMESPACE: default
+      GRAPH_ID: default
+      GRAPH_CELL_ID: cell-0
+      GRAPH_CELLS: cell-0
+      GRAPH_NODE_ID: node-0
+      GRAPH_BOLT_NODE_ADDRESSES: node-0=127.0.0.1:7687
+      GRAPH_ADVERTISED_BOLT_ADDR: 127.0.0.1:7687
+      GRAPH_HTTP_ADDR: 0.0.0.0:8443
+      GRAPH_BOLT_ADDR: 0.0.0.0:7687
+      GRAPH_ADMIN_ADDR: 0.0.0.0:9090
+      GRAPH_DATA_CACHE_DIR: /data/cache
+      GRAPH_AUTH_TOKEN_FILE: /data/auth-token
+      GRAPH_ALLOW_PLAINTEXT: "true"
+      RUST_MIN_STACK: "33554432"
+      RUST_LOG: info
+    restart: unless-stopped
+    volumes:
+      - hydradb_store:/data/store
+      - hydradb_cache:/data/cache
+      - ./hydradb-data/auth-token:/data/auth-token:ro
+
+  api:
+    build:
+      context: ./backend
+    container_name: hydrashield-api
+    environment:
+      HYDRADB_URL: http://hydradb:8443
+      HYDRADB_TOKEN: local-development-token-32-bytes
+      HYDRADB_NAMESPACE: default
+      HYDRADB_GRAPH: default
+      HYDRADB_CELL: cell-0
+      DATA_DIR: /data
+      AUTO_INGEST: "true"
+    restart: unless-stopped
+    volumes:
+      - ./data:/data:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      - hydradb
+
+  web:
+    build:
+      context: ./frontend
+    container_name: hydrashield-web
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  hydradb_store:
+  hydradb_cache:
