@@ -50,6 +50,8 @@ jobs:
           cloudflared --version
 
       - name: Open public tunnel
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if ! command -v cloudflared >/dev/null 2>&1; then
             curl -fsSL -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
@@ -82,8 +84,9 @@ jobs:
           echo "This URL stays up until the workflow is cancelled or times out (90 minutes)." >> "$GITHUB_STEP_SUMMARY"
           echo "Public demo URL: $URL"
           echo "::notice title=HydraShield live demo::$URL"
-          GH_TOKEN="${GITHUB_TOKEN}" gh api --method POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
-            -f body="$(printf '**Live demo (HydraDB):** %s\n\nOpen this URL to test HydraShield. It stays up until this workflow is cancelled or times out (~90 minutes). Re-run **Actions → Live demo** for a new URL.' "$URL")"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+            -f body="$(printf '**Live demo (HydraDB):** %s\n\nOpen this URL to test HydraShield. It stays up until this workflow is cancelled or times out (~90 minutes). Re-run **Actions → Live demo** for a new URL.' "$URL")" \
+            || echo "Commit comment failed (demo is still up)"
 
       - name: Upload demo URL
         uses: actions/upload-artifact@v4
