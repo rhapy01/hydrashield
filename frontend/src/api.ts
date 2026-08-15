@@ -174,6 +174,16 @@ export type Replay = {
   headline: string;
 };
 
+export async function uploadLockfile(file: File): Promise<void> {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch("/api/lockfiles", { method: "POST", body });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(payload.detail || "Lockfile ingest failed — HydraDB must be running.");
+  }
+}
+
 export async function ingest(): Promise<void> {
   const res = await fetch("/api/ingest", { method: "POST" });
   if (!res.ok) {

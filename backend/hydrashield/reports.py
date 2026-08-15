@@ -26,6 +26,33 @@ def markdown_report(result: dict[str, Any]) -> str:
         f"- Ecosystem dependents: {summary['ecosystem_dependents']}",
         f"- Typosquats: {summary['typosquats']}",
         "",
+    ]
+    blast = result.get("blast") or {}
+    intro = blast.get("introducing") or {}
+    if intro:
+        lines += [
+            "## Introducing version",
+            "",
+            intro.get("why") or f"`{inc['package']}@{inc['version']}`",
+            "",
+        ]
+        for row in intro.get("releases") or []:
+            lines.append(f"- `{inc['package']}@{row.get('version')}` · {row.get('role')}")
+        lines.append("")
+    if blast.get("answers"):
+        lines += ["## Track 2A answers", ""]
+        for item in blast["answers"]:
+            lines.append(f"**{item['q']}** {item['a']}")
+            lines.append("")
+    rings = blast.get("rings") or {}
+    if rings:
+        lines += ["## Complete blast radius", ""]
+        for key in ("org", "ecosystem", "adjacent"):
+            ring = rings.get(key) or {}
+            names = ", ".join(f"`{name}`" for name in (ring.get("names") or [])[:12])
+            lines.append(f"- **{ring.get('label') or key}** ({ring.get('count') or 0}): {names}")
+        lines.append("")
+    lines += [
         "## Advisory",
         "",
         inc.get("advisory") or "n/a",

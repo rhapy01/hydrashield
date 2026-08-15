@@ -160,6 +160,9 @@ code,
   color: var(--text);
   padding: 9px 14px;
   border-radius: 8px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
 }
 
 .btn.primary {
@@ -431,6 +434,24 @@ code,
   align-items: center;
 }
 
+.timeline.releases {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.release-why {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.release-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .tl-item.introduced {
   color: var(--critical);
 }
@@ -516,6 +537,30 @@ code,
   padding: 3px 7px;
   border-radius: 4px;
   font-size: 12px;
+}
+
+.ring-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ring-split h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ring-split code {
+  display: inline-block;
+  background: var(--panel-2);
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin: 0 6px 6px 0;
 }
 
 .answers {
@@ -733,7 +778,8 @@ code,
     grid-template-columns: repeat(2, 1fr);
   }
   .rings,
-  .answers {
+  .answers,
+  .ring-split {
     grid-template-columns: 1fr;
   }
 }

@@ -205,6 +205,48 @@ def test_blast_rings_and_introducing_version() -> None:
     assert "2.4.1" in blast["answers"][1]["a"]
 
 
+def test_report_includes_track_answers() -> None:
+    from hydrashield.blast import build_blast
+    from hydrashield.reports import markdown_report
+
+    t0, t1 = INCIDENT["published_ts"], INCIDENT["yanked_ts"]
+    blast = build_blast(
+        package="signal-bus",
+        version="2.4.1",
+        safe_version="2.4.2",
+        ranked=[{"name": "checkout-api"}],
+        reverse=[{"name": "event-router", "version": "0.9.3"}],
+        maintainers=[{"name": "react-signal-hooks"}],
+        infra=[{"name": "queue-pulse"}],
+        typos=[{"name": "signel-bus"}],
+        releases=[{"version": "2.4.1", "published_at": t0, "compromised": True}],
+        t0=t0,
+        t1=t1,
+    )
+    text = markdown_report(
+        {
+            "engine": "hydradb",
+            "incident": {**INCIDENT, "start_ts": t0, "end_ts": t1},
+            "summary": {
+                "window_seconds": 360,
+                "services_exposed": 1,
+                "services_total": 2,
+                "p0_exposed": 1,
+                "production_exposed": 1,
+                "ecosystem_dependents": 1,
+                "typosquats": 1,
+            },
+            "blast": blast,
+            "exposed": [],
+            "remediation": {"summary": "", "steps": []},
+        }
+    )
+    assert "Track 2A answers" in text
+    assert "Introducing version" in text
+    assert "signel-bus" in text
+    assert "Which version introduced" in text
+
+
 def test_contained_reasons() -> None:
     from hydrashield.analyze import _why_contained
 

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   analyze,
   fmtTime,
   ingest,
+  uploadLockfile,
   whyLabel,
   type AnalyzeResponse,
   type DelayCost,
@@ -38,6 +39,7 @@ export function App() {
   const [tab, setTab] = useState<"exposed" | "contained">("exposed");
   const [queryName, setQueryName] = useState<string>("direct_lockfile_hits");
   const [ring, setRing] = useState<"org" | "ecosystem" | "adjacent">("org");
+  const lockInput = useRef<HTMLInputElement>(null);
   const [playhead, setPlayhead] = useState<number>(0);
   const [playing, setPlaying] = useState(false);
   const [yankMinutes, setYankMinutes] = useState<number | null>(null);
@@ -111,6 +113,23 @@ export function App() {
   const query = data?.queries.find((item) => item.name === queryName) ?? data?.queries[0];
   const featured = ["direct_lockfile_hits", "package_releases", "ms_paths", "sp_path", "reverse_dependents", "shared_infra", "typosquats"];
 
+  async function onLockfile(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await uploadLockfile(file);
+      const result = await analyze();
+      setData(result);
+      setPlayhead(result.replay.t1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+      if (lockInput.current) lockInput.current.value = "";
+    }
+  }
+
   function startReplay() {
     if (!replay) return;
     setYankMinutes(null);
@@ -180,9 +199,22 @@ export function App() {
           <button className="btn" disabled={!replay} onClick={startReplay}>
             {playing ? "Replaying…" : "Replay 360s"}
           </button>
+          <button className="btn" disabled={busy} onClick={() => lockInput.current?.click()}>
+            Add lockfile
+          </button>
+          <a className="btn" href="/api/analyze/report" download="hydrashield-report.md">
+            Report
+          </a>
           <button className="btn primary" disabled={!data} onClick={() => setShowPlan(true)}>
             Containment plan
           </button>
+          <input
+            ref={lockInput}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(event) => void onLockfile(event.target.files?.[0])}
+          />
         </div>
       </section>
 
@@ -286,6 +318,8 @@ export function App() {
             </div>
             {data.blast?.introducing.releases.length ? (
             <div className="timeline releases">
+              <p className="release-why">{data.blast.introducing.why}</p>
+              <div className="release-row">
               {data.blast.introducing.releases.map((rel, index) => (
                 <span key={rel.version} className="release-pair">
                   {index > 0 ? <span className="tl-line" /> : null}
@@ -296,6 +330,7 @@ export function App() {
                   </div>
                 </span>
               ))}
+              </div>
             </div>
             ) : null}
           </section>
@@ -432,12 +467,35 @@ export function App() {
               ))}
             </div>
             <p className="ring-why">{data.blast.rings[ring].why}</p>
-            <div className="ring-names">
-              {data.blast.rings[ring].names.slice(0, 16).map((name) => (
-                <code key={name}>{name}</code>
-              ))}
-              {data.blast.rings[ring].names.length > 16 ? <span>…</span> : null}
-            </div>
+            {ring === "adjacent" ? (
+              <div className="ring-split">
+                <div>
+                  <h3>Shared maintainers</h3>
+                  {(data.blast.rings.adjacent.maintainers || []).map((name) => (
+                    <code key={name}>{name}</code>
+                  ))}
+                </div>
+                <div>
+                  <h3>Same publishing infra</h3>
+                  {(data.blast.rings.adjacent.infra || []).map((name) => (
+                    <code key={name}>{name}</code>
+                  ))}
+                </div>
+                <div>
+                  <h3>Typosquats</h3>
+                  {(data.blast.rings.adjacent.typosquats || []).map((name) => (
+                    <code key={name}>{name}</code>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="ring-names">
+                {data.blast.rings[ring].names.slice(0, 16).map((name) => (
+                  <code key={name}>{name}</code>
+                ))}
+                {data.blast.rings[ring].names.length > 16 ? <span>…</span> : null}
+              </div>
+            )}
             <div className="answers">
               {data.blast.answers.slice(0, 5).map((item) => (
                 <div key={item.q}>
