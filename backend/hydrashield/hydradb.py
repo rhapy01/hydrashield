@@ -222,13 +222,42 @@ class HydraDB:
         )
 
     def reverse_dependents(self, bad_id: int, max_len: int = 6) -> list[dict[str, Any]]:
-        del max_len
-        return self.rows(
-            "MATCH (bad:PackageVersion {id: $bad})<-[:DEPENDS_ON*1..6]-(other:PackageVersion) "
-            "RETURN other.id AS id, other.name AS name, other.version AS version",
-            {"bad": bad_id},
-            log_name="reverse_dependents",
-        )
+        try:
+            rows = self.rows(
+                "CALL algo.SSpaths({sourceNode: $source, "
+                "relTypes: ['DEPENDS_ON'], relDirection: 'incoming', "
+                f"maxLen: {int(max_len)}, pathCount: 64}}) "
+                "YIELD path RETURN path",
+                {"source": bad_id},
+                log_name="reverse_dependents",
+            )
+        except HydraDBError:
+            rows = []
+        found: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            for vid in _path_ids(row.get("path")):
+                if vid != bad_id and vid not in found:
+                    node = self.vertex(vid) or {"id": vid}
+                    found[vid] = node
+        if found:
+            return list(found.values())
+        seen = {bad_id}
+        frontier = [bad_id]
+        out: list[dict[str, Any]] = []
+        for _ in range(max_len):
+            nxt: list[int] = []
+            for vid in frontier:
+                for nb in self.neighbors(vid, "DEPENDS_ON", incoming=True):
+                    nid = int(nb["id"])
+                    if nid in seen:
+                        continue
+                    seen.add(nid)
+                    nxt.append(nid)
+                    out.append(nb)
+            frontier = nxt
+            if not frontier:
+                break
+        return out
 
     def shared_maintainers(self, package: str) -> list[dict[str, Any]]:
         return self.rows(
