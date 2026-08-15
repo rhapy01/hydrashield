@@ -6,6 +6,7 @@ from typing import Any
 
 from . import universe as U
 from .graph import GraphStore
+from .blast import build_blast
 from .ranking import rank_services
 from .remediation import remediation_plan
 from .replay import build_replay
@@ -99,6 +100,7 @@ class Analyzer:
         infra = self.store.shared_infra(package)
         typos = self.store.typosquats(package)
         fleet = self.store.list_services()
+        releases = self.store.package_releases(package)
 
         lock_candidates: dict[int, list[int]] = {}
         all_sources: list[int] = []
@@ -309,6 +311,19 @@ class Analyzer:
             "remediation": plan,
             "graph": {"nodes": list(graph_nodes.values()), "edges": _unique_edges(graph_edges)},
             "replay": build_replay(ranked, t0=start_ts, t1=end_ts),
+            "blast": build_blast(
+                package=package,
+                version=version,
+                safe_version=safe_version,
+                ranked=ranked,
+                reverse=reverse_nodes,
+                maintainers=unique_maintainers,
+                infra=unique_infra,
+                typos=unique_typos,
+                releases=releases,
+                t0=start_ts,
+                t1=end_ts,
+            ),
             "queries": list(self.store.query_log),
         }
 

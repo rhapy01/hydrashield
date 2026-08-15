@@ -37,6 +37,7 @@ export function App() {
   const [showPlan, setShowPlan] = useState(false);
   const [tab, setTab] = useState<"exposed" | "contained">("exposed");
   const [queryName, setQueryName] = useState<string>("direct_lockfile_hits");
+  const [ring, setRing] = useState<"org" | "ecosystem" | "adjacent">("org");
   const [playhead, setPlayhead] = useState<number>(0);
   const [playing, setPlaying] = useState(false);
   const [yankMinutes, setYankMinutes] = useState<number | null>(null);
@@ -108,7 +109,7 @@ export function App() {
   }, [data, liveNames]);
 
   const query = data?.queries.find((item) => item.name === queryName) ?? data?.queries[0];
-  const featured = ["direct_lockfile_hits", "ms_paths", "sp_path", "reverse_dependents", "shared_infra", "typosquats"];
+  const featured = ["direct_lockfile_hits", "package_releases", "ms_paths", "sp_path", "reverse_dependents", "shared_infra", "typosquats"];
 
   function startReplay() {
     if (!replay) return;
@@ -283,27 +284,20 @@ export function App() {
                 <span>play the six minutes · dimmed nodes have not resolved yet</span>
               </div>
             </div>
-            <div className="timeline">
-              <div className="tl-item">
-                <i className="tl-dot" /> 08:41 ledger-worker still on 2.4.0
-              </div>
-              <div className="tl-line" />
-              <div className="tl-item">
-                <i className="tl-dot bad" /> 09:00 publish 2.4.1
-              </div>
-              <div className="tl-line" />
-              <div className="tl-item">
-                <i className="tl-dot bad" /> 09:02–09:05 CI lockfiles
-              </div>
-              <div className="tl-line" />
-              <div className="tl-item">
-                <i className="tl-dot ok" /> 09:06 yanked
-              </div>
-              <div className="tl-line" />
-              <div className="tl-item">
-                <i className="tl-dot ok" /> 09:12 webhook-relay on 2.4.2
-              </div>
+            {data.blast?.introducing.releases.length ? (
+            <div className="timeline releases">
+              {data.blast.introducing.releases.map((rel, index) => (
+                <span key={rel.version} className="release-pair">
+                  {index > 0 ? <span className="tl-line" /> : null}
+                  <div className={`tl-item ${rel.role}`}>
+                    <i className={`tl-dot ${rel.role === "introduced" ? "bad" : rel.role === "patched" ? "ok" : ""}`} />
+                    {data.blast.introducing.package}@{rel.version}
+                    {rel.role === "introduced" ? " · introduced" : rel.role === "prior_clean" ? " · clean" : rel.role === "patched" ? " · patched" : ""}
+                  </div>
+                </span>
+              ))}
             </div>
+            ) : null}
           </section>
 
           <aside className="side">
@@ -416,41 +410,41 @@ export function App() {
         </main>
       )}
 
-      {data && (
+      {data?.blast && (
         <>
-          <section className="neighborhood">
-            <div className="nb">
-              <h3>Shared maintainers</h3>
-              <ul>
-                {data.maintainers.slice(0, 6).map((row) => (
-                  <li key={row.name}>
-                    <code>{row.name}</code> · {row.npm_user}
-                  </li>
-                ))}
-              </ul>
+          <section className="blast-board">
+            <div className="blast-head">
+              <h2>Complete blast radius</h2>
+              <p>{data.blast.answers[5]?.a}</p>
             </div>
-            <div className="nb">
-              <h3>Next-hop worm (same OIDC)</h3>
-              <p className="nb-note">{data.next_hop.reason}</p>
-              <ul>
-                {(data.next_hop.packages.length ? data.next_hop.packages : data.infrastructure)
-                  .slice(0, 6)
-                  .map((row) => (
-                    <li key={row.name + row.infra}>
-                      <code>{row.name}</code> · {row.infra}
-                    </li>
-                  ))}
-              </ul>
+            <div className="rings">
+              {(
+                [
+                  ["org", data.blast.rings.org],
+                  ["ecosystem", data.blast.rings.ecosystem],
+                  ["adjacent", data.blast.rings.adjacent],
+                ] as const
+              ).map(([key, item]) => (
+                <button key={key} className={`ring ${ring === key ? "on" : ""}`} onClick={() => setRing(key)}>
+                  <b>{item.count}</b>
+                  <span>{item.label}</span>
+                </button>
+              ))}
             </div>
-            <div className="nb">
-              <h3>Typosquat neighborhood</h3>
-              <ul>
-                {data.typosquats.map((row) => (
-                  <li key={row.name}>
-                    <code>{row.name}</code>
-                  </li>
-                ))}
-              </ul>
+            <p className="ring-why">{data.blast.rings[ring].why}</p>
+            <div className="ring-names">
+              {data.blast.rings[ring].names.slice(0, 16).map((name) => (
+                <code key={name}>{name}</code>
+              ))}
+              {data.blast.rings[ring].names.length > 16 ? <span>…</span> : null}
+            </div>
+            <div className="answers">
+              {data.blast.answers.slice(0, 5).map((item) => (
+                <div key={item.q}>
+                  <b>{item.q}</b>
+                  <span>{item.a}</span>
+                </div>
+              ))}
             </div>
           </section>
           <section className="drawer">

@@ -154,6 +154,57 @@ def test_replay_delay_costs_p0s() -> None:
     assert replay["headline"]
 
 
+def test_blast_rings_and_introducing_version() -> None:
+    from hydrashield.blast import build_blast, classify_release
+
+    t0, t1 = INCIDENT["published_ts"], INCIDENT["yanked_ts"]
+    assert (
+        classify_release(
+            {"version": "2.4.1", "compromised": True, "published_at": t0},
+            bad_version="2.4.1",
+            safe_version="2.4.2",
+            t0=t0,
+            t1=t1,
+        )
+        == "introduced"
+    )
+    assert (
+        classify_release(
+            {"version": "2.4.0", "compromised": False, "published_at": t0 - 86400},
+            bad_version="2.4.1",
+            safe_version="2.4.2",
+            t0=t0,
+            t1=t1,
+        )
+        == "prior_clean"
+    )
+    blast = build_blast(
+        package="signal-bus",
+        version="2.4.1",
+        safe_version="2.4.2",
+        ranked=[{"name": "checkout-api"}, {"name": "fraud-service"}],
+        reverse=[{"name": "event-router", "version": "0.9.3"}, {"name": "telemetry-kit", "version": "3.1.0"}],
+        maintainers=[{"name": "react-signal-hooks"}, {"name": "signal-bus"}],
+        infra=[{"name": "queue-pulse"}],
+        typos=[{"name": "signel-bus"}],
+        releases=[
+            {"version": "2.4.0", "published_at": t0 - 86400, "compromised": False},
+            {"version": "2.4.1", "published_at": t0, "compromised": True},
+            {"version": "2.4.2", "published_at": t1 + 120, "compromised": False},
+        ],
+        t0=t0,
+        t1=t1,
+    )
+    assert blast["introducing"]["version"] == "2.4.1"
+    assert [row["role"] for row in blast["introducing"]["releases"]] == ["prior_clean", "introduced", "patched"]
+    assert blast["rings"]["org"]["count"] == 2
+    assert blast["rings"]["ecosystem"]["count"] == 2
+    assert "signel-bus" in blast["rings"]["adjacent"]["names"]
+    assert "checkout-api" not in blast["rings"]["adjacent"]["names"]
+    assert len(blast["answers"]) == 6
+    assert "2.4.1" in blast["answers"][1]["a"]
+
+
 def test_contained_reasons() -> None:
     from hydrashield.analyze import _why_contained
 

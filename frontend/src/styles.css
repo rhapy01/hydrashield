@@ -424,6 +424,121 @@ code,
   width: 36px;
   height: 1px;
   background: var(--line-2);
+}
+
+.release-pair {
+  display: flex;
+  align-items: center;
+}
+
+.tl-item.introduced {
+  color: var(--critical);
+}
+
+.tl-item.patched {
+  color: var(--accent);
+}
+
+.blast-board {
+  border-top: 1px solid var(--line);
+  padding: 14px 18px 18px;
+}
+
+.blast-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.blast-head h2 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.blast-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.rings {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.ring {
+  border: 1px solid var(--line-2);
+  background: var(--panel);
+  color: var(--text);
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.ring b {
+  display: block;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ring.on {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.ring-why {
+  margin: 10px 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ring-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.ring-names code {
+  background: var(--panel-2);
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.answers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 18px;
+}
+
+.answers div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.answers b {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.answers span {
+  font-size: 13px;
+}
   margin: 0 6px;
 }
 
@@ -616,5 +731,9 @@ code,
   }
   .kpis {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .rings,
+  .answers {
+    grid-template-columns: 1fr;
   }
 }

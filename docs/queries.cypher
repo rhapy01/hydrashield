@@ -2,6 +2,12 @@
 -- These run against HydraDB's OpenCypher subset: one relationship type
 -- per hop, bounded variable-length paths, integer vertex ids.
 
+-- Which version introduced the compromise (HAS_RELEASE)
+MATCH (p:Package)-[:HAS_RELEASE]->(v:PackageVersion)
+WHERE p.name = $name
+RETURN v.version AS version, v.published_at AS published_at,
+       v.compromised AS compromised, v.yanked AS yanked
+
 -- Compromised version
 MATCH (v:PackageVersion)
 WHERE v.name = $name AND v.version = $version

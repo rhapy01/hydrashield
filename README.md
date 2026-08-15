@@ -29,7 +29,7 @@ HydraDB is not a cache sitting under a SQL model. The product’s central action
 |---|---|
 | Object-store-backed durable graph + integer vertex ids | Ingest of packages, versions, lockfiles, services |
 | OpenCypher `MATCH` with bounded variable-length `DEPENDS_ON*1..6` | Ecosystem reverse closure |
-| Directed one-type hops `Service-[:RUNS]->Application-[:HAS_LOCKFILE]->Lockfile-[:RESOLVES]->PackageVersion` | Org exposure |
+| `MATCH (p:Package)-[:HAS_RELEASE]->(v:PackageVersion)` | Introducing version |
 | `WHERE lock.resolved_at >= $t0 AND lock.resolved_at <= $t1` | Temporal window (the 09:00–09:06 question) |
 | `algo.MSpaths` | Batch evidence paths from lockfile pins to the compromised version |
 | `algo.SPpaths` | Fallback single-pair evidence path |
@@ -111,7 +111,7 @@ Full beats: [docs/JUDGES.md](docs/JUDGES.md).
 2. **Replay 360s**: clock 09:00→09:06, nodes light as lockfiles resolve. Then **If yanked at +2m** — `checkout-api` is still clean.
 3. Yellow strip: name-grep over-flags vs in-window exposure. Click **Contained** — `ledger-worker` (08:41 / 2.4.0) and `webhook-relay` (09:12 / 2.4.2).
 4. Click `checkout-api`. Path highlights: `payments-core → event-router → signal-bus@2.4.1` from `algo.MSpaths`.
-5. Next-hop OIDC + typosquats. **Containment plan**: upgrade `2.4.2` first. Cypher drawer: `direct_lockfile_hits`.
+5. **Complete blast radius**: org / ecosystem / adjacent rings. HAS_RELEASE: `2.4.0` clean → `2.4.1` introduced → `2.4.2` patched. Containment plan + Cypher drawer.
 
 Services that locked **before** 09:00 or **after** the yank are on Contained, not Exposed. That is the temporal argument a scanner cannot make.
 

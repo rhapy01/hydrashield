@@ -106,7 +106,43 @@ export type AnalyzeResponse = {
   };
   graph: { nodes: GraphNode[]; edges: GraphEdge[] };
   replay: Replay;
+  blast: Blast;
   queries: QueryLog[];
+};
+
+export type BlastRing = {
+  label: string;
+  count: number;
+  names: string[];
+  why: string;
+  maintainers?: string[];
+  infra?: string[];
+  typosquats?: string[];
+};
+
+export type BlastRelease = {
+  version: string;
+  published_at?: number;
+  compromised?: boolean;
+  yanked?: boolean;
+  role: "introduced" | "prior_clean" | "patched" | "other";
+};
+
+export type Blast = {
+  introducing: {
+    package: string;
+    version: string;
+    safe_version: string;
+    why: string;
+    releases: BlastRelease[];
+    introduced?: BlastRelease;
+  };
+  rings: {
+    org: BlastRing;
+    ecosystem: BlastRing;
+    adjacent: BlastRing;
+  };
+  answers: { q: string; a: string }[];
 };
 
 export type ReplayFrame = {

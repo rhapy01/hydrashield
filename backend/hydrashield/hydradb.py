@@ -386,6 +386,18 @@ class HydraDB:
             log_name="packages",
         )
 
+    def package_releases(self, name: str) -> list[dict[str, Any]]:
+        """HAS_RELEASE walk — which version introduced the compromise."""
+        rows = self.rows(
+            "MATCH (p:Package)-[:HAS_RELEASE]->(v:PackageVersion) "
+            "WHERE p.name = $name "
+            "RETURN v.id AS id, v.name AS name, v.version AS version, "
+            "v.published_at AS published_at, v.compromised AS compromised, v.yanked AS yanked",
+            {"name": name},
+            log_name="package_releases",
+        )
+        return sorted(rows, key=lambda row: (int(row.get("published_at") or 0), str(row.get("version") or "")))
+
     def list_versions(self, name: str | None = None) -> list[dict[str, Any]]:
         if name:
             return self.rows(
