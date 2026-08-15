@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -72,6 +72,7 @@ jobs:
             exit 1
           fi
           echo "LIVE_URL=$URL" >> "$GITHUB_ENV"
+          echo "$URL" > live-url.txt
           echo "## HydraShield live demo" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Open:** $URL" >> "$GITHUB_STEP_SUMMARY"
@@ -80,6 +81,15 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "This URL stays up until the workflow is cancelled or times out (90 minutes)." >> "$GITHUB_STEP_SUMMARY"
           echo "Public demo URL: $URL"
+          echo "::notice title=HydraShield live demo::$URL"
+          GH_TOKEN="${GITHUB_TOKEN}" gh api --method POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+            -f body="$(printf '**Live demo (HydraDB):** %s\n\nOpen this URL to test HydraShield. It stays up until this workflow is cancelled or times out (~90 minutes). Re-run **Actions → Live demo** for a new URL.' "$URL")"
+
+      - name: Upload demo URL
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-demo-url
+          path: live-url.txt
 
       - name: Keep demo alive
         run: |
