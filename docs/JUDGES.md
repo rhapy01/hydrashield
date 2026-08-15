@@ -9,7 +9,7 @@ HydraDB is the product. Unplug `graph-node` and ingest/analyze return HTTP 503. 
 | Time | Beat |
 |---|---|
 | 0:00 | Problem: scanners grep lockfiles. Worms publish and yank in minutes. Grep has no time. |
-| 0:20 | Open the UI. Headline is the track question. HydraDB pill is live. |
+| 0:20 | Open the UI. Headline is the track question. Pick package / version / 09:00–09:06. HydraDB pill is live. |
 | 0:35 | Hit **Replay 360s**. Clock runs 09:00→09:06. Nodes light as CI lockfiles resolve. Read the ticking exposed / P0 counts. |
 | 1:10 | Click **If yanked at +2m**. `checkout-api` is still clean. Waiting three extra minutes is what put P0 checkout in the blast. |
 | 1:35 | Click **Contained**. `ledger-worker` pinned `2.4.0` at 08:41. `webhook-relay` got `2.4.2` at 09:12. Both would light up a name grep. |
@@ -22,7 +22,7 @@ HydraDB is the product. Unplug `graph-node` and ingest/analyze return HTTP 503. 
 
 | Query | Procedure / Cypher |
 |---|---|
-| Compromised version | `MATCH (v:PackageVersion)` · `consistency: strong` |
+| Compromised version | `PackageVersion-[:COMPROMISED_IN]->IncidentWindow` then `MATCH (v:PackageVersion)` · `consistency: strong` |
 | In-window org exposure | `Service-[:RUNS]->Application-[:HAS_LOCKFILE]->Lockfile-[:RESOLVES]->PackageVersion` + `WHERE lock.resolved_at` |
 | Introducing version | `Package-[:HAS_RELEASE]->PackageVersion` |
 | Evidence paths | `algo.MSpaths` (batch) then `algo.SPpaths` / 1-hop `MATCH` |

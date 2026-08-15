@@ -192,27 +192,60 @@ export async function ingest(): Promise<void> {
   }
 }
 
-export async function analyze(): Promise<AnalyzeResponse> {
+export async function analyze(body: AnalyzeBody = {}): Promise<AnalyzeResponse> {
   const res = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || "Analyze failed");
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(payload.detail || "Analyze failed");
   }
   return res.json();
+}
+
+export type AnalyzeBody = {
+  package?: string;
+  version?: string;
+  start_ts?: number;
+  end_ts?: number;
+  safe_version?: string;
+};
+
+export async function listPackages(): Promise<string[]> {
+  const res = await fetch("/api/packages");
+  if (!res.ok) return [];
+  const body = await res.json();
+  return (body.packages || []).map((row: { name: string }) => row.name).filter(Boolean);
+}
+
+export async function listVersions(name: string): Promise<string[]> {
+  const res = await fetch(`/api/versions?name=${encodeURIComponent(name)}`);
+  if (!res.ok) return [];
+  const body = await res.json();
+  return (body.versions || []).map((row: { version: string }) => row.version).filter(Boolean);
 }
 
 export function fmtTime(unix: number): string {
   return new Date(unix * 1000).toISOString().slice(11, 19) + "Z";
 }
 
+export function clockOf(unix: number): string {
+  return new Date(unix * 1000).toISOString().slice(11, 19);
+}
+
+export function clockToTs(base: number, clock: string): number {
+  const parts = clock.split(":").map((part) => Number(part) || 0);
+  const date = new Date((base || Date.now() / 1000) * 1000);
+  date.setUTCHours(parts[0] || 0, parts[1] || 0, parts[2] || 0, 0);
+  return Math.floor(date.getTime() / 1000);
+}
+
 export function whyLabel(why: string): string {
-  if (why === "before_window") return "Pinned before 09:00";
+  if (why === "before_window") return "Pinned before the window";
   if (why === "after_yank") return "Resolved after yank";
   if (why === "other_version") return "Different version in-window";
-  if (why === "no_pin") return "Never resolved signal-bus";
+  if (why === "no_pin") return "Never resolved this package";
   return why;
 }

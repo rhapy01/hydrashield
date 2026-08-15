@@ -7,6 +7,7 @@ from typing import Any
 from . import universe as U
 from .graph import GraphStore
 from .blast import build_blast
+from .hydradb import HydraDBError
 from .ranking import rank_services
 from .remediation import remediation_plan
 from .replay import build_replay
@@ -80,14 +81,19 @@ class Analyzer:
         inc = U.INCIDENT
         package = package or inc["package"]
         version = version or inc["version"]
-        start_ts = start_ts if start_ts is not None else inc["published_ts"]
-        end_ts = end_ts if end_ts is not None else inc["yanked_ts"]
+        self.store.query_log = []
+        window = None
+        try:
+            window = self.store.incident_window(package, version)
+        except (HydraDBError, AttributeError, TypeError):
+            window = None
+        start_ts = start_ts if start_ts is not None else int((window or {}).get("start_ts") or inc["published_ts"])
+        end_ts = end_ts if end_ts is not None else int((window or {}).get("end_ts") or inc["yanked_ts"])
         if start_ts > end_ts:
             raise ValueError("start_ts must be <= end_ts")
         window_len = max(end_ts - start_ts, 1)
         safe_version = safe_version or inc["safe_version"]
 
-        self.store.query_log = []
         bad = self.store.find_version(package, version)
         if not bad:
             raise LookupError(f"PackageVersion {package}@{version} is not in the graph")
@@ -100,7 +106,10 @@ class Analyzer:
         infra = self.store.shared_infra(package)
         typos = self.store.typosquats(package)
         fleet = self.store.list_services()
-        releases = self.store.package_releases(package)
+        try:
+            releases = self.store.package_releases(package)
+        except (HydraDBError, AttributeError, TypeError):
+            releases = self.store.list_versions(package)
 
         lock_candidates: dict[int, list[int]] = {}
         all_sources: list[int] = []
@@ -287,6 +296,8 @@ class Analyzer:
                 "safe_version": safe_version,
                 "start_ts": start_ts,
                 "end_ts": end_ts,
+                "title": (window or {}).get("title") or inc.get("title"),
+                "advisory": (window or {}).get("advisory") or inc.get("advisory"),
             },
             "compromised": bad,
             "summary": {

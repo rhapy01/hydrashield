@@ -398,6 +398,17 @@ class HydraDB:
         )
         return sorted(rows, key=lambda row: (int(row.get("published_at") or 0), str(row.get("version") or "")))
 
+    def incident_window(self, name: str, version: str) -> dict[str, Any] | None:
+        rows = self.rows(
+            "MATCH (v:PackageVersion)-[:COMPROMISED_IN]->(w:IncidentWindow) "
+            "WHERE v.name = $name AND v.version = $version "
+            "RETURN w.slug AS slug, w.name AS title, w.start_ts AS start_ts, "
+            "w.end_ts AS end_ts, w.advisory AS advisory, v.id AS version_id",
+            {"name": name, "version": version},
+            log_name="compromised_in",
+        )
+        return rows[0] if rows else None
+
     def list_versions(self, name: str | None = None) -> list[dict[str, Any]]:
         if name:
             return self.rows(

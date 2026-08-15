@@ -6,7 +6,9 @@ HydraShield does not have a local graph. HydraDB is the product.
 |---|---|
 | Ingest of packages, versions, lockfiles, services, maintainers, infra | `UNWIND` / `MERGE` writes to HydraDB |
 | Compromised version lookup | `MATCH (v:PackageVersion) WHERE v.name = $name` with `consistency: strong` |
+| Incident window | `PackageVersion-[:COMPROMISED_IN]->IncidentWindow` |
 | Introducing version | `Package-[:HAS_RELEASE]->PackageVersion` |
+| Time-window exposure | `Service-[:RUNS]->Application-[:HAS_LOCKFILE]->Lockfile-[:RESOLVES]->PackageVersion` + `WHERE lock.resolved_at` |
 | Scanner contrast | Same hop chain without the time predicate (`package_pins`) |
 | Reverse ecosystem closure | `algo.SSpaths` incoming on `DEPENDS_ON` |
 | Evidence paths | `CALL algo.MSpaths` then `algo.SPpaths` / 1-hop `MATCH` still on HydraDB |

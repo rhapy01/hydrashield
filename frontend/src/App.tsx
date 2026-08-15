@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   analyze,
+  clockOf,
+  clockToTs,
   fmtTime,
   ingest,
+  listPackages,
+  listVersions,
   uploadLockfile,
   whyLabel,
   type AnalyzeResponse,
@@ -43,6 +47,25 @@ export function App() {
   const [playhead, setPlayhead] = useState<number>(0);
   const [playing, setPlaying] = useState(false);
   const [yankMinutes, setYankMinutes] = useState<number | null>(null);
+  const [pkg, setPkg] = useState("signal-bus");
+  const [ver, setVer] = useState("2.4.1");
+  const [t0clock, setT0clock] = useState("09:00:00");
+  const [t1clock, setT1clock] = useState("09:06:00");
+  const [packages, setPackages] = useState<string[]>(["signal-bus"]);
+  const [versions, setVersions] = useState<string[]>(["2.4.0", "2.4.1", "2.4.2"]);
+
+  function applyResult(result: AnalyzeResponse) {
+    setData(result);
+    setPlayhead(result.replay.t1);
+    setPkg(result.incident.package);
+    setVer(result.incident.version);
+    setT0clock(clockOf(result.incident.start_ts));
+    setT1clock(clockOf(result.incident.end_ts));
+    const rels = result.blast?.introducing.releases.map((row) => row.version).filter(Boolean);
+    if (rels?.length) setVersions(rels);
+    const first = result.exposed[0]?.name;
+    if (first) setSelected(first);
+  }
 
   async function run(seed: boolean) {
     setBusy(true);
@@ -51,11 +74,16 @@ export function App() {
     setYankMinutes(null);
     try {
       if (seed) await ingest();
-      const result = await analyze();
-      setData(result);
-      setPlayhead(result.replay.t1);
-      const first = result.exposed[0]?.name;
-      if (first) setSelected(first);
+      const base = data?.incident.start_ts;
+      const body = base
+        ? {
+            package: pkg,
+            version: ver,
+            start_ts: clockToTs(base, t0clock),
+            end_ts: clockToTs(base, t1clock),
+          }
+        : {};
+      applyResult(await analyze(body));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -65,6 +93,9 @@ export function App() {
 
   useEffect(() => {
     void run(false);
+    void listPackages().then((names) => {
+      if (names.length) setPackages([...new Set(names)].sort());
+    });
   }, []);
 
   const replay = data?.replay;
@@ -111,7 +142,7 @@ export function App() {
   }, [data, liveNames]);
 
   const query = data?.queries.find((item) => item.name === queryName) ?? data?.queries[0];
-  const featured = ["direct_lockfile_hits", "package_releases", "ms_paths", "sp_path", "reverse_dependents", "shared_infra", "typosquats"];
+  const featured = ["compromised_in", "direct_lockfile_hits", "package_releases", "ms_paths", "sp_path", "reverse_dependents", "shared_infra", "typosquats"];
 
   async function onLockfile(file: File | undefined) {
     if (!file) return;
@@ -119,9 +150,7 @@ export function App() {
     setError(null);
     try {
       await uploadLockfile(file);
-      const result = await analyze();
-      setData(result);
-      setPlayhead(result.replay.t1);
+      applyResult(await analyze(data ? { package: pkg, version: ver, start_ts: data.incident.start_ts, end_ts: data.incident.end_ts } : {}));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -182,11 +211,14 @@ export function App() {
       <section className="alert">
         <div>
           <h1>
-            <span className="pkg">signal-bus@2.4.1</span> was live for six minutes. Who was actually exposed?
+            <span className="pkg">
+              {data?.incident.package || pkg}@{data?.incident.version || ver}
+            </span>{" "}
+            was live for {data?.summary.window_seconds || 360} seconds. Who was actually exposed?
           </h1>
           <p>
             {counterfactual
-              ? `Counterfactual: yank at ${counterfactual.clock} instead of 09:06:00. ${counterfactual.saved} services stay clean` +
+              ? `Counterfactual: yank at ${counterfactual.clock} instead of ${fmtTime(replay?.t1 || data?.incident.end_ts || 0)}. ${counterfactual.saved} services stay clean` +
                 (counterfactual.saved_p0.length ? `, including P0 ${counterfactual.saved_p0.join(", ")}.` : ".")
               : data?.briefing ||
                 "Temporal reverse-closure on HydraDB: Service → Lockfile → PackageVersion, only where lock.resolved_at sits inside 09:00–09:06 UTC."}
@@ -217,6 +249,103 @@ export function App() {
           />
         </div>
       </section>
+
+      <form
+        className="incident-bar"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void run(false);
+        }}
+      >
+        <label>
+          Package
+          <select
+            value={pkg}
+            onChange={(event) => {
+              const name = event.target.value;
+              setPkg(name);
+              void listVersions(name).then((rels) => {
+                if (!rels.length) return;
+                setVersions(rels);
+                setVer((current) => (rels.includes(current) ? current : rels[rels.length - 1]));
+              });
+            }}
+          >
+            {(packages.includes(pkg) ? packages : [pkg, ...packages]).map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Version
+          <select value={ver} onChange={(event) => setVer(event.target.value)}>
+            {(versions.includes(ver) ? versions : [ver, ...versions]).map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          From
+          <input value={t0clock} onChange={(event) => setT0clock(event.target.value)} spellCheck={false} />
+        </label>
+        <label>
+          To
+          <input value={t1clock} onChange={(event) => setT1clock(event.target.value)} spellCheck={false} />
+        </label>
+        <button className="btn compact" type="submit" disabled={busy}>
+          Analyze window
+        </button>
+        <button
+          className="btn compact"
+          type="button"
+          disabled={!data || busy}
+          onClick={() => {
+            setT0clock("09:00:00");
+            setT1clock("09:06:00");
+            if (!data) return;
+            const base = data.incident.start_ts;
+            setBusy(true);
+            void analyze({
+              package: pkg,
+              version: ver,
+              start_ts: clockToTs(base, "09:00:00"),
+              end_ts: clockToTs(base, "09:06:00"),
+            })
+              .then(applyResult)
+              .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+              .finally(() => setBusy(false));
+          }}
+        >
+          09:00–09:06
+        </button>
+        <button
+          className="btn compact"
+          type="button"
+          disabled={!data || busy}
+          onClick={() => {
+            setT0clock("09:00:00");
+            setT1clock("09:02:00");
+            if (!data) return;
+            const base = data.incident.start_ts;
+            setBusy(true);
+            void analyze({
+              package: pkg,
+              version: ver,
+              start_ts: clockToTs(base, "09:00:00"),
+              end_ts: clockToTs(base, "09:02:00"),
+            })
+              .then(applyResult)
+              .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+              .finally(() => setBusy(false));
+          }}
+        >
+          09:00–09:02
+        </button>
+      </form>
 
       {!data && (
         <div className={`status ${error ? "error" : ""}`}>
@@ -251,7 +380,7 @@ export function App() {
               <b>Why not grep?</b> A lockfile name search hits {data.contrast.scanner_name_hits} services.
               HydraDB’s time window keeps {data.contrast.hydrashield_exposed}. The extras —
               {data.contrast.false_positives.slice(0, 4).map((name) => ` ${name}`).join(",")}
-              {data.contrast.false_positives.length > 4 ? "…" : ""} — pinned before 09:00 or after the yank.
+              {data.contrast.false_positives.length > 4 ? "…" : ""} — pinned before the window or after the yank.
             </div>
             <div className={`replay ${counterfactual ? "cf" : ""}`}>
               <div className="replay-top">
@@ -376,7 +505,7 @@ export function App() {
                       <div className="name">{row.name}</div>
                       <div className="meta">
                         {whyLabel(row.why)}
-                        {row.pinned_version ? ` · signal-bus@${row.pinned_version}` : ""}
+                        {row.pinned_version ? ` · ${data.incident.package}@${row.pinned_version}` : ""}
                         {row.resolved_at ? ` · ${fmtTime(row.resolved_at)}` : ""}
                       </div>
                     </span>
@@ -423,7 +552,7 @@ export function App() {
                     {selectedRow.path.map((hop) => (
                       <span key={`${hop.name}@${hop.version}`}>
                         <span className="arrow"> → </span>
-                        <span className={`hop ${hop.name === "signal-bus" ? "bad" : ""}`}>
+                        <span className={`hop ${hop.name === data.incident.package ? "bad" : ""}`}>
                           {hop.name}@{hop.version}
                         </span>
                       </span>
