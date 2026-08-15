@@ -30,6 +30,13 @@ jobs:
             fi
             sleep 4
           done
+          echo "HydraDB write probe:"
+          curl -sS -w "\ncreate_http %{http_code}\n" http://127.0.0.1:8443/v1/graphs/default/query \
+            -H "Authorization: Bearer local-development-token-32-bytes" \
+            -H "X-Graph-Namespace: default" \
+            -H "Content-Type: application/json" \
+            --data '{"cell_id":"cell-0","query":"CREATE (a {id: 1})-[:FOLLOWS]->(b {id: 2})"}' \
+            | tee /tmp/hydradb-write.json || true
           echo "Waiting for API health..."
           for i in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
@@ -41,6 +48,8 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:8000/api/ingest || true
           curl -fsS http://127.0.0.1:8000/api/health || true
           docker compose ps
+          echo "HydraDB logs (tail):"
+          docker compose logs --tail=80 hydradb || true
 
       - name: Install cloudflared
         run: |
@@ -85,7 +94,7 @@ jobs:
           echo "Public demo URL: $URL"
           echo "::notice title=HydraShield live demo::$URL"
           gh api --method POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
-            -f body="$(printf '**Live demo (HydraDB):** %s\n\nOpen this URL to test HydraShield. It stays up until this workflow is cancelled or times out (~90 minutes). Re-run **Actions → Live demo** for a new URL.' "$URL")" \
+            -f body="$(printf '**Live demo (HydraDB):** %s\n\nOpen this URL to test HydraShield. It stays up until this workflow is cancelled or times out (~90 minutes). Re-run **Actions → Live demo** for a new URL.\n\nWrite probe:\n```\n%s\n```' "$URL" "$(cat /tmp/hydradb-write.json 2>/dev/null | head -c 1500)")" \
             || echo "Commit comment failed (demo is still up)"
 
       - name: Upload demo URL

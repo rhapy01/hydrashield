@@ -2,6 +2,7 @@ services:
   hydradb:
     image: ghcr.io/hydra-db/hydradb:latest
     container_name: hydrashield-hydradb
+    user: "0:0"
     ports:
       - "7687:7687"
       - "8443:8443"
