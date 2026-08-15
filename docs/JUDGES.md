@@ -9,13 +9,14 @@ HydraDB is the product. Unplug `graph-node` and ingest/analyze return HTTP 503. 
 | Time | Beat |
 |---|---|
 | 0:00 | Problem: scanners grep lockfiles. Worms publish and yank in minutes. Grep has no time. |
-| 0:25 | Open the UI. Headline is the track question. HydraDB pill is live. |
-| 0:40 | KPIs: exposed in-window vs contained vs scanner over-flags. Read the yellow contrast strip. |
-| 1:10 | Click **Contained**. `ledger-worker` pinned `2.4.0` at 08:41. `webhook-relay` got `2.4.2` at 09:12. Both would light up a name grep. HydraDB keeps them out. |
-| 1:40 | Click **Exposed** → `checkout-api`. Path: `checkout-api → payments-core@12.0.0 → event-router@0.9.3 → signal-bus@2.4.1`. Graph highlights that path. Paths come from `algo.MSpaths` / `algo.SPpaths`. |
-| 2:10 | Neighborhood: shared maintainer, GitHub Actions OIDC next-hop (worm republish surface), typosquats (`signel-bus`). |
-| 2:30 | **Containment plan**: upgrade `signal-bus@2.4.2` first (clears every in-window hit), rotate OIDC/npm tokens, block typosquats. |
-| 2:45 | Open the Cypher drawer. `direct_lockfile_hits` is the 09:00–09:06 query. `ms_paths` is the batch evidence procedure. |
+| 0:20 | Open the UI. Headline is the track question. HydraDB pill is live. |
+| 0:35 | Hit **Replay 360s**. Clock runs 09:00→09:06. Nodes light as CI lockfiles resolve. Read the ticking exposed / P0 counts. |
+| 1:10 | Click **If yanked at +2m**. `checkout-api` is still clean. Waiting three extra minutes is what put P0 checkout in the blast. |
+| 1:35 | Click **Contained**. `ledger-worker` pinned `2.4.0` at 08:41. `webhook-relay` got `2.4.2` at 09:12. Both would light up a name grep. |
+| 2:00 | Click **Exposed** → `checkout-api`. Path: `checkout-api → payments-core@12.0.0 → event-router@0.9.3 → signal-bus@2.4.1` from `algo.MSpaths`. |
+| 2:20 | Neighborhood: shared maintainer, GitHub Actions OIDC next-hop, typosquats (`signel-bus`). |
+| 2:35 | **Containment plan**: upgrade `signal-bus@2.4.2` first, rotate OIDC/npm tokens, block typosquats. |
+| 2:50 | Cypher drawer: `direct_lockfile_hits` is the 09:00–09:06 query. `ms_paths` is the batch evidence procedure. |
 
 ## What HydraDB does that SQL/vectors cannot
 
@@ -33,7 +34,7 @@ HydraDB is the product. Unplug `graph-node` and ingest/analyze return HTTP 503. 
 
 **Problem:** After an npm compromise, defenders cannot answer “which of our services resolved the malicious version while it was live?” Lockfile grep has no time and no path.
 
-**What we built:** HydraShield, an incident workspace over a HydraDB graph of packages, lockfile snapshots, services, maintainers, publishing infra, and typosquats.
+**What we built:** HydraShield, an incident workspace over a HydraDB graph of packages, lockfile snapshots, services, maintainers, publishing infra, and typosquats. The demo is a 360-second replay plus a counterfactual yank: waiting two extra minutes is what puts P0 checkout-api in the blast.
 
 **How HydraDB is used:** It is the only graph. Ingest writes integer-id vertices and typed edges. Analyze is a planner that binds the compromised `PackageVersion` id and runs OpenCypher plus `algo.SPpaths` / `MSpaths` / `SSpaths` against one snapshot. Without HydraDB the product does not run.
 

@@ -123,6 +123,37 @@ def test_name_grep_is_not_the_blast_radius() -> None:
     assert len(named) > len(windowed)
 
 
+def test_replay_delay_costs_p0s() -> None:
+    from hydrashield.replay import build_replay
+
+    t0, t1 = INCIDENT["published_ts"], INCIDENT["yanked_ts"]
+    ranked = []
+    for app in APPLICATIONS:
+        resolved = parse_iso(app["resolved_at"])
+        tree = resolve_tree(app["direct"], pin_signal=app.get("pin_signal"))
+        if t0 <= resolved <= t1 and ("signal-bus", "2.4.1") in tree:
+            crit = "P0" if app["slug"] in {
+                "checkout-api",
+                "payments-gateway",
+                "fraud-service",
+                "web-app",
+                "payouts-api",
+            } else "P2"
+            ranked.append({"name": app["slug"], "resolved_at": resolved, "criticality": crit})
+    replay = build_replay(ranked, t0=t0, t1=t1)
+    assert replay["frames"][0]["at"] == t0
+    assert replay["frames"][0]["exposed_count"] == 0
+    assert replay["frames"][-1]["exposed_count"] == len(ranked)
+    two = next(row for row in replay["delay_cost"] if row["minutes"] == 2)
+    three = next(row for row in replay["delay_cost"] if row["minutes"] == 3)
+    six = next(row for row in replay["delay_cost"] if row["minutes"] == 6)
+    assert six["exposed"] > two["exposed"]
+    assert "checkout-api" in two["saved_names"]
+    assert "checkout-api" not in three["saved_names"]
+    assert six["saved"] == 0
+    assert replay["headline"]
+
+
 def test_contained_reasons() -> None:
     from hydrashield.analyze import _why_contained
 

@@ -105,7 +105,37 @@ export type AnalyzeResponse = {
     residual_services: string[];
   };
   graph: { nodes: GraphNode[]; edges: GraphEdge[] };
+  replay: Replay;
   queries: QueryLog[];
+};
+
+export type ReplayFrame = {
+  at: number;
+  offset_s: number;
+  clock: string;
+  exposed_count: number;
+  p0_count: number;
+  new: string[];
+  exposed_names: string[];
+};
+
+export type DelayCost = {
+  minutes: number;
+  yank_at: number;
+  clock: string;
+  exposed: number;
+  saved: number;
+  saved_p0: string[];
+  saved_names: string[];
+};
+
+export type Replay = {
+  t0: number;
+  t1: number;
+  duration_s: number;
+  frames: ReplayFrame[];
+  delay_cost: DelayCost[];
+  headline: string;
 };
 
 export async function ingest(): Promise<void> {

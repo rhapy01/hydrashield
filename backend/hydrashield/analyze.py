@@ -8,6 +8,7 @@ from . import universe as U
 from .graph import GraphStore
 from .ranking import rank_services
 from .remediation import remediation_plan
+from .replay import build_replay
 from .schema import REL
 
 
@@ -307,6 +308,7 @@ class Analyzer:
             "typosquats": unique_typos,
             "remediation": plan,
             "graph": {"nodes": list(graph_nodes.values()), "edges": _unique_edges(graph_edges)},
+            "replay": build_replay(ranked, t0=start_ts, t1=end_ts),
             "queries": list(self.store.query_log),
         }
 

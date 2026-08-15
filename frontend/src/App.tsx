@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { analyze, fmtTime, ingest, whyLabel, type AnalyzeResponse, type ExposedService } from "./api";
+import {
+  analyze,
+  fmtTime,
+  ingest,
+  whyLabel,
+  type AnalyzeResponse,
+  type DelayCost,
+  type ExposedService,
+  type Replay,
+} from "./api";
 import { BlastGraph } from "./BlastGraph";
 
 function Mark() {
@@ -11,6 +20,15 @@ function Mark() {
   );
 }
 
+function frameAt(replay: Replay, playhead: number) {
+  let current = replay.frames[0];
+  for (const frame of replay.frames) {
+    if (frame.at <= playhead) current = frame;
+    else break;
+  }
+  return current;
+}
+
 export function App() {
   const [data, setData] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -19,14 +37,20 @@ export function App() {
   const [showPlan, setShowPlan] = useState(false);
   const [tab, setTab] = useState<"exposed" | "contained">("exposed");
   const [queryName, setQueryName] = useState<string>("direct_lockfile_hits");
+  const [playhead, setPlayhead] = useState<number>(0);
+  const [playing, setPlaying] = useState(false);
+  const [yankMinutes, setYankMinutes] = useState<number | null>(null);
 
   async function run(seed: boolean) {
     setBusy(true);
     setError(null);
+    setPlaying(false);
+    setYankMinutes(null);
     try {
       if (seed) await ingest();
       const result = await analyze();
       setData(result);
+      setPlayhead(result.replay.t1);
       const first = result.exposed[0]?.name;
       if (first) setSelected(first);
     } catch (err) {
@@ -40,19 +64,84 @@ export function App() {
     void run(false);
   }, []);
 
+  const replay = data?.replay;
+  const frame = replay ? frameAt(replay, playhead) : undefined;
+  const liveNames = frame?.exposed_names ?? data?.exposed.map((row) => row.name);
+  const counterfactual = yankMinutes != null ? replay?.delay_cost.find((row) => row.minutes === yankMinutes) : undefined;
+
+  useEffect(() => {
+    if (!playing || !replay) return;
+    const id = window.setInterval(() => {
+      setPlayhead((head) => {
+        const next = head + 2;
+        if (next >= replay.t1) {
+          setPlaying(false);
+          return replay.t1;
+        }
+        return next;
+      });
+    }, 40);
+    return () => window.clearInterval(id);
+  }, [playing, replay]);
+
+  useEffect(() => {
+    if (!playing || !frame?.new.length) return;
+    setSelected(frame.new[0]);
+    setTab("exposed");
+  }, [playing, frame?.at, frame?.new]);
+
   const selectedRow: ExposedService | undefined = useMemo(
     () => data?.exposed.find((row) => row.name === selected),
     [data, selected],
   );
 
   const hotIds = useMemo(() => {
-    if (!selectedRow) return [];
+    if (!selectedRow || (liveNames && !liveNames.includes(selectedRow.name))) return [];
     const ids = [selectedRow.id, ...selectedRow.path.map((hop) => hop.id).filter((id): id is number => id != null)];
     return ids;
-  }, [selectedRow]);
+  }, [selectedRow, liveNames]);
+
+  const liveExposed = useMemo(() => {
+    if (!data) return [];
+    if (!liveNames) return data.exposed;
+    return data.exposed.filter((row) => liveNames.includes(row.name));
+  }, [data, liveNames]);
 
   const query = data?.queries.find((item) => item.name === queryName) ?? data?.queries[0];
   const featured = ["direct_lockfile_hits", "ms_paths", "sp_path", "reverse_dependents", "shared_infra", "typosquats"];
+
+  function startReplay() {
+    if (!replay) return;
+    setYankMinutes(null);
+    setPlayhead(replay.t0);
+    setPlaying(true);
+    setTab("exposed");
+  }
+
+  function jumpYank(row: DelayCost) {
+    if (!replay) return;
+    setPlaying(false);
+    setYankMinutes(row.minutes);
+    setPlayhead(row.yank_at);
+    setTab("exposed");
+    const firstLive = [...replay.frames].reverse().find((frame) => frame.at <= row.yank_at);
+    const live = firstLive?.exposed_names[firstLive.exposed_names.length - 1];
+    if (live) setSelected(live);
+  }
+
+  const spark = useMemo(() => {
+    if (!replay?.frames.length) return "";
+    const w = 160;
+    const h = 28;
+    const max = Math.max(...replay.frames.map((item) => item.exposed_count), 1);
+    return replay.frames
+      .map((item, i) => {
+        const x = (i / Math.max(replay.frames.length - 1, 1)) * w;
+        const y = h - (item.exposed_count / max) * (h - 2);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+  }, [replay]);
 
   return (
     <div className="app">
@@ -76,13 +165,19 @@ export function App() {
             <span className="pkg">signal-bus@2.4.1</span> was live for six minutes. Who was actually exposed?
           </h1>
           <p>
-            {data?.briefing ||
-              "Temporal reverse-closure on HydraDB: Service → Lockfile → PackageVersion, only where lock.resolved_at sits inside 09:00–09:06 UTC."}
+            {counterfactual
+              ? `Counterfactual: yank at ${counterfactual.clock} instead of 09:06:00. ${counterfactual.saved} services stay clean` +
+                (counterfactual.saved_p0.length ? `, including P0 ${counterfactual.saved_p0.join(", ")}.` : ".")
+              : data?.briefing ||
+                "Temporal reverse-closure on HydraDB: Service → Lockfile → PackageVersion, only where lock.resolved_at sits inside 09:00–09:06 UTC."}
           </p>
         </div>
         <div className="actions">
           <button className="btn" disabled={busy} onClick={() => void run(true)}>
             {busy ? "Querying HydraDB…" : "Ingest + analyze"}
+          </button>
+          <button className="btn" disabled={!replay} onClick={startReplay}>
+            {playing ? "Replaying…" : "Replay 360s"}
           </button>
           <button className="btn primary" disabled={!data} onClick={() => setShowPlan(true)}>
             Containment plan
@@ -98,21 +193,21 @@ export function App() {
         </div>
       )}
 
-      {data && (
+      {data && replay && frame && (
         <main className="workspace">
           <section className="stage">
             <div className="kpis">
               <div className="kpi hot">
-                <b>{data.summary.services_exposed}</b>
-                <span>exposed in-window</span>
+                <b>{frame.exposed_count}</b>
+                <span>{counterfactual ? `exposed if yanked +${yankMinutes}m` : "exposed at this second"}</span>
               </div>
               <div className="kpi hot">
-                <b>{data.summary.p0_exposed}</b>
+                <b>{frame.p0_count}</b>
                 <span>P0 production</span>
               </div>
               <div className="kpi">
-                <b>{data.summary.services_safe}</b>
-                <span>contained / not in window</span>
+                <b>{counterfactual ? counterfactual.saved : data.summary.services_safe}</b>
+                <span>{counterfactual ? "saved by earlier yank" : "contained / not in window"}</span>
               </div>
               <div className="kpi">
                 <b>{data.summary.scanner_false_positives}</b>
@@ -125,8 +220,56 @@ export function App() {
               {data.contrast.false_positives.slice(0, 4).map((name) => ` ${name}`).join(",")}
               {data.contrast.false_positives.length > 4 ? "…" : ""} — pinned before 09:00 or after the yank.
             </div>
+            <div className={`replay ${counterfactual ? "cf" : ""}`}>
+              <div className="replay-top">
+                <button className="btn compact" onClick={() => (playing ? setPlaying(false) : startReplay())}>
+                  {playing ? "Pause" : "Play"}
+                </button>
+                <div className={`replay-clock ${counterfactual ? "cf" : ""}`}>{fmtTime(playhead)}</div>
+                <div className="replay-arrivals">
+                  {playing && frame.new.length
+                    ? `CI lock · ${frame.new.join(", ")}`
+                    : `${Math.max(playhead - replay.t0, 0)}s after publish`}
+                </div>
+                <svg className="spark" viewBox="0 0 160 28" aria-hidden="true">
+                  <polyline fill="none" stroke="#ff4d6d" strokeWidth="1.6" points={spark} />
+                </svg>
+              </div>
+              <input
+                className="replay-scrub"
+                type="range"
+                min={replay.t0}
+                max={replay.t1}
+                value={playhead}
+                onChange={(event) => {
+                  setPlaying(false);
+                  setYankMinutes(null);
+                  setPlayhead(Number(event.target.value));
+                }}
+              />
+              <div className="yank-row">
+                <span className="yank-label">If yanked at</span>
+                {replay.delay_cost.map((row) => (
+                  <button
+                    key={row.minutes}
+                    className={`yank-chip ${yankMinutes === row.minutes ? "on" : ""}`}
+                    onClick={() => jumpYank(row)}
+                  >
+                    +{row.minutes}m · save {row.saved}
+                    {row.saved_p0.length ? ` · ${row.saved_p0[0]}` : ""}
+                  </button>
+                ))}
+              </div>
+              <p className="replay-headline">{replay.headline}</p>
+            </div>
             <div className="graph-wrap">
-              <BlastGraph data={data} selected={selected} hotIds={hotIds} onSelect={setSelected} />
+              <BlastGraph
+                data={data}
+                selected={selected}
+                hotIds={hotIds}
+                liveNames={liveNames}
+                onSelect={setSelected}
+              />
               <div className="legend">
                 <span>
                   <i className="swatch" style={{ background: "#ff4d6d" }} /> compromised
@@ -135,9 +278,9 @@ export function App() {
                   <i className="swatch" style={{ background: "#5aa7ff" }} /> package path
                 </span>
                 <span>
-                  <i className="swatch" style={{ background: "#3ee0b4" }} /> service
+                  <i className="swatch" style={{ background: "#3ee0b4" }} /> live this second
                 </span>
-                <span>click a service · path highlights from algo.MSpaths</span>
+                <span>play the six minutes · dimmed nodes have not resolved yet</span>
               </div>
             </div>
             <div className="timeline">
@@ -166,7 +309,8 @@ export function App() {
           <aside className="side">
             <div className="tabs">
               <button className={tab === "exposed" ? "on" : ""} onClick={() => setTab("exposed")}>
-                Exposed ({data.exposed.length})
+                Exposed ({liveExposed.length}
+                {liveExposed.length !== data.exposed.length ? `/${data.exposed.length}` : ""})
               </button>
               <button className={tab === "contained" ? "on" : ""} onClick={() => setTab("contained")}>
                 Contained ({data.contained.length})
@@ -174,10 +318,10 @@ export function App() {
             </div>
             {tab === "exposed" ? (
               <div className="list">
-                {data.exposed.map((row) => (
+                {liveExposed.map((row) => (
                   <button
                     key={row.name}
-                    className={`svc ${selected === row.name ? "active" : ""}`}
+                    className={`svc ${selected === row.name ? "active" : ""} ${frame.new.includes(row.name) ? "arriving" : ""}`}
                     onClick={() => {
                       setSelected(row.name);
                       setShowPlan(false);
@@ -237,7 +381,8 @@ export function App() {
               </div>
             ) : (
               selectedRow &&
-              tab === "exposed" && (
+              tab === "exposed" &&
+              liveNames?.includes(selectedRow.name) && (
                 <div className="evidence">
                   <h3>
                     Evidence · {selectedRow.name} · {selectedRow.env}
@@ -257,6 +402,15 @@ export function App() {
                   </div>
                 </div>
               )
+            )}
+            {counterfactual && !showPlan && (
+              <div className="plan cf-note">
+                <h3>Still clean at {counterfactual.clock}</h3>
+                <p>
+                  {counterfactual.saved_names.slice(0, 8).join(", ")}
+                  {counterfactual.saved_names.length > 8 ? "…" : ""}
+                </p>
+              </div>
             )}
           </aside>
         </main>

@@ -108,10 +108,10 @@ These cover lockfile parsing, temporal window membership, path evidence, ranking
 Full beats: [docs/JUDGES.md](docs/JUDGES.md).
 
 1. Headline: `signal-bus@2.4.1` live for six minutes. HydraDB pill is green.
-2. Yellow strip: name-grep over-flags vs in-window exposure. Click **Contained** — `ledger-worker` (08:41 / 2.4.0) and `webhook-relay` (09:12 / 2.4.2).
-3. Click `checkout-api`. Path highlights: `payments-core → event-router → signal-bus@2.4.1` from `algo.MSpaths`.
-4. Next-hop OIDC + typosquats. **Containment plan**: upgrade `2.4.2` first.
-5. Cypher drawer: `direct_lockfile_hits` is the 09:00–09:06 query.
+2. **Replay 360s**: clock 09:00→09:06, nodes light as lockfiles resolve. Then **If yanked at +2m** — `checkout-api` is still clean.
+3. Yellow strip: name-grep over-flags vs in-window exposure. Click **Contained** — `ledger-worker` (08:41 / 2.4.0) and `webhook-relay` (09:12 / 2.4.2).
+4. Click `checkout-api`. Path highlights: `payments-core → event-router → signal-bus@2.4.1` from `algo.MSpaths`.
+5. Next-hop OIDC + typosquats. **Containment plan**: upgrade `2.4.2` first. Cypher drawer: `direct_lockfile_hits`.
 
 Services that locked **before** 09:00 or **after** the yank are on Contained, not Exposed. That is the temporal argument a scanner cannot make.
 

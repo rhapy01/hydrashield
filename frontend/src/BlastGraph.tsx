@@ -4,6 +4,7 @@ type Props = {
   data: AnalyzeResponse;
   selected?: string;
   hotIds?: number[];
+  liveNames?: string[];
   onSelect: (name: string) => void;
 };
 
@@ -20,7 +21,7 @@ function radiusFor(kind: string, index: number): number {
   return 230;
 }
 
-export function BlastGraph({ data, selected, hotIds = [], onSelect }: Props) {
+export function BlastGraph({ data, selected, hotIds = [], liveNames, onSelect }: Props) {
   const width = 920;
   const height = 520;
   const cx = width / 2;
@@ -58,6 +59,10 @@ export function BlastGraph({ data, selected, hotIds = [], onSelect }: Props) {
         const b = layout.get(edge.target)!;
         const onPath = hot.has(edge.source) && hot.has(edge.target);
         const compromised = a.node.kind === "compromised" || b.node.kind === "compromised";
+        const liveEdge =
+          !liveNames ||
+          ((a.node.kind !== "service" || liveNames.includes(a.node.name)) &&
+            (b.node.kind !== "service" || liveNames.includes(b.node.name)));
         return (
           <line
             key={`${edge.source}-${edge.target}-${i}`}
@@ -65,20 +70,23 @@ export function BlastGraph({ data, selected, hotIds = [], onSelect }: Props) {
             y1={a.y}
             x2={b.x}
             y2={b.y}
+            opacity={liveEdge ? 1 : 0.08}
             stroke={onPath ? "rgba(255,77,109,0.85)" : compromised ? "rgba(255,77,109,0.28)" : "rgba(90,167,255,0.18)"}
             strokeWidth={onPath ? 2.4 : compromised ? 1.4 : 1}
           />
         );
       })}
       {[...layout.values()].map(({ x, y, node }) => {
+        const live = !liveNames || node.kind !== "service" || liveNames.includes(node.name);
         const active = selected === node.name || selected === node.label || hot.has(node.id);
         const r = node.kind === "compromised" ? 11 : node.kind === "service" ? 7 : 5.5;
         return (
           <g
             key={node.id}
             transform={`translate(${x},${y})`}
-            style={{ cursor: node.kind === "service" ? "pointer" : "default" }}
-            onClick={() => node.kind === "service" && onSelect(node.name)}
+            opacity={live ? 1 : 0.12}
+            style={{ cursor: node.kind === "service" && live ? "pointer" : "default" }}
+            onClick={() => node.kind === "service" && live && onSelect(node.name)}
           >
             <circle
               r={r + (active ? 3 : 0)}
