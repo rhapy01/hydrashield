@@ -224,7 +224,7 @@ class HydraDB:
     def reverse_dependents(self, bad_id: int, max_len: int = 6) -> list[dict[str, Any]]:
         del max_len
         return self.rows(
-            "MATCH (other:PackageVersion)-[:DEPENDS_ON*1..6]->(bad:PackageVersion {id: $bad}) "
+            "MATCH (bad:PackageVersion {id: $bad})<-[:DEPENDS_ON*1..6]-(other:PackageVersion) "
             "RETURN other.id AS id, other.name AS name, other.version AS version",
             {"bad": bad_id},
             log_name="reverse_dependents",
