@@ -88,6 +88,10 @@ code,
   display: flex;
   align-items: center;
   gap: 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
 }
 
 .mark {
@@ -226,9 +230,274 @@ code,
   cursor: wait;
 }
 
-.btn.compact {
-  padding: 6px 10px;
+.btn.lg {
+  padding: 12px 18px;
+  font-size: 15px;
+}
+
+.btn.ghost {
+  background: transparent;
+  color: var(--muted);
+}
+
+.crumb {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
   font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 4px 0;
+}
+
+.crumb::before {
+  content: "← ";
+}
+
+.help-btn {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.help-pop {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  padding: 8px 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.help-pop p {
+  margin: 0;
+}
+
+.help-pop a {
+  color: var(--accent);
+  margin-left: auto;
+}
+
+.home {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 48px 28px 72px;
+}
+
+.home-copy {
+  max-width: 640px;
+  margin-bottom: 36px;
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.home-copy h1 {
+  margin: 0 0 14px;
+  font-family: Syne, sans-serif;
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.lede {
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.55;
+  max-width: 54ch;
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.ticket,
+.ask {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 22px 24px 24px;
+}
+
+.ticket {
+  box-shadow: 0 0 0 1px rgba(255, 77, 109, 0.08);
+}
+
+.ticket-kicker {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sev {
+  font-family: "IBM Plex Mono", monospace;
+  color: var(--critical);
+  border: 1px solid rgba(255, 77, 109, 0.35);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.ticket h2,
+.ask h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.ticket p,
+.ask p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ticket-facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.ticket-facts dt {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.ticket-facts dd {
+  margin: 4px 0 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+}
+
+.ask form {
+  display: grid;
+  gap: 10px;
+}
+
+.ask label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ask select,
+.ask input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+}
+
+.ask-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.home-steps {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 20px;
+  margin: 36px 0 0;
+  padding: 0;
+}
+
+.home-steps li {
+  display: grid;
+  gap: 6px;
+}
+
+.home-steps b {
+  font-size: 13px;
+}
+
+.home-steps span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.incident {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  padding: 18px 22px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.incident-id {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.incident h1 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.incident-window {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.incident p {
+  margin: 0;
+  color: var(--muted);
+  max-width: 72ch;
+  line-height: 1.45;
+  font-size: 14px;
+}
+
+.insight {
+  padding: 10px 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.app.is-home {
+  grid-template-rows: auto 1fr;
 }
 
 .replay {
@@ -855,6 +1124,11 @@ code,
 
 @media (max-width: 1100px) {
   .workspace {
+    grid-template-columns: 1fr;
+  }
+  .home-grid,
+  .home-steps,
+  .ticket-facts {
     grid-template-columns: 1fr;
   }
   .kpis {

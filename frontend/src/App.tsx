@@ -56,6 +56,21 @@ export function App() {
   const [packages, setPackages] = useState<string[]>(["signal-bus"]);
   const [versions, setVersions] = useState<string[]>(["2.4.0", "2.4.1", "2.4.2"]);
   const [hydra, setHydra] = useState<{ hydradb: boolean; ingested: boolean } | null>(null);
+  const [screen, setScreen] = useState<"home" | "desk">(() =>
+    new URLSearchParams(window.location.search).get("open") === "1" ? "desk" : "home",
+  );
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  function enterDesk() {
+    setScreen("desk");
+    history.replaceState(null, "", `${window.location.pathname}?open=1`);
+  }
+
+  function leaveDesk() {
+    setScreen("home");
+    setHelpOpen(false);
+    history.replaceState(null, "", window.location.pathname);
+  }
 
   function applyResult(result: AnalyzeResponse) {
     setData(result);
@@ -83,16 +98,17 @@ export function App() {
     setYankMinutes(null);
     try {
       if (seed) await ingest();
-      const base = data?.incident.start_ts;
-      const body = base
-        ? {
-            package: pkg,
-            version: ver,
-            start_ts: clockToTs(base, t0clock),
-            end_ts: clockToTs(base, t1clock),
-          }
-        : {};
+      const body: { package: string; version: string; start_ts?: number; end_ts?: number } = {
+        package: pkg,
+        version: ver,
+      };
+      if (data) {
+        const base = data.incident.start_ts;
+        body.start_ts = clockToTs(base, t0clock);
+        body.end_ts = clockToTs(base, t1clock);
+      }
       applyResult(await analyze(body));
+      enterDesk();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -101,10 +117,10 @@ export function App() {
   }
 
   useEffect(() => {
-    void run(false);
     void listPackages().then((names) => {
       if (names.length) setPackages([...new Set(names)].sort());
     });
+    if (new URLSearchParams(window.location.search).get("open") === "1") void run(false);
   }, []);
 
   useEffect(() => {
@@ -170,6 +186,7 @@ export function App() {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       const tag = (event.target as HTMLElement | null)?.tagName;
+      if (screen !== "desk") return;
       if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
       if (event.key === " " || event.code === "Space") {
         event.preventDefault();
@@ -204,7 +221,7 @@ export function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [playing, replay, data]);
+  }, [playing, replay, data, screen]);
 
   const hotIds = useMemo(() => {
     if (!selectedRow || (liveNames && !liveNames.includes(selectedRow.name))) return [];
@@ -280,66 +297,185 @@ export function App() {
   }, [replay]);
 
   return (
-    <div className={`app ${busy ? "is-busy" : ""}`}>
-      {busy ? <div className="busy-mask">Querying HydraDB…</div> : null}
+    <div className={`app ${busy ? "is-busy" : ""} ${screen === "home" ? "is-home" : "is-desk"}`}>
+      {busy ? <div className="busy-mask">{screen === "home" ? "Opening incident…" : "Querying HydraDB…"}</div> : null}
       <header className="topbar">
-        <div className="brand">
+        <button className="brand" type="button" onClick={leaveDesk} aria-label="HydraShield home">
           <Mark />
           <div className="wordmark">
             Hydra<span>Shield</span>
           </div>
-        </div>
-        <div className="tag">360-second blast radius</div>
+        </button>
+        {screen === "desk" ? (
+          <button className="crumb" type="button" onClick={leaveDesk}>
+            Incidents
+          </button>
+        ) : (
+          <div className="tag">VantaPay · AppSec</div>
+        )}
         <div className="top-meta">
-          <span>VantaPay · npm · Track 2A</span>
-          <a className="story-link" href="/hydradb-story.html" target="_blank" rel="noreferrer">
-            HydraDB in 60s
-          </a>
           <span className={`pill ${hydra?.hydradb ? "live" : ""}`}>
-            {hydra?.hydradb ? "HydraDB · live graph" : "HydraDB required"}
+            {hydra?.hydradb ? "HydraDB connected" : "HydraDB required"}
           </span>
+          {screen === "desk" ? (
+            <button className="help-btn" type="button" onClick={() => setHelpOpen((open) => !open)} aria-expanded={helpOpen}>
+              Help
+            </button>
+          ) : null}
         </div>
       </header>
+      {helpOpen && screen === "desk" ? (
+        <div className="help-pop">
+          <p>Space play/pause · 2 yank +2m · C contained · E exposed · P plan · Esc full window</p>
+          <a href="/hydradb-story.html" target="_blank" rel="noreferrer">
+            How HydraDB is queried
+          </a>
+        </div>
+      ) : null}
 
-      <section className="alert">
+      {screen === "home" ? (
+        <section className="home">
+          <div className="home-copy">
+            <p className="eyebrow">Incident desk</p>
+            <h1>Which services resolved the bad version while it was live?</h1>
+            <p className="lede">
+              HydraShield is for the on-call who just saw an npm advisory. It asks HydraDB — the graph of packages,
+              lockfiles, and VantaPay services — not a lockfile grep. Time is part of the question.
+            </p>
+          </div>
+          <div className="home-grid">
+            <article className="ticket">
+              <div className="ticket-kicker">
+                <span className="sev">SEV-1</span>
+                <span className="mono">INC-2026-0514-SIGNAL-BUS</span>
+              </div>
+              <h2>
+                <span className="pkg">signal-bus@2.4.1</span> on the registry for six minutes
+              </h2>
+              <dl className="ticket-facts">
+                <div>
+                  <dt>Published</dt>
+                  <dd>09:00 UTC</dd>
+                </div>
+                <div>
+                  <dt>Yanked</dt>
+                  <dd>09:06 UTC</dd>
+                </div>
+                <div>
+                  <dt>Org</dt>
+                  <dd>VantaPay</dd>
+                </div>
+              </dl>
+              <p>
+                Maintainer GitHub Actions OIDC was reused to publish a postinstall worm. Open this incident to see who
+                resolved <code>2.4.1</code> in that window, through which dependency path, and what to upgrade first.
+              </p>
+              <button className="btn primary lg" disabled={busy} onClick={() => void run(false)}>
+                Open incident
+              </button>
+            </article>
+            <article className="ask">
+              <h2>Ask about another package</h2>
+              <p>Same desk, different window. HydraDB already holds the VantaPay lockfiles.</p>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void run(false);
+                }}
+              >
+                <label>
+                  Package
+                  <select
+                    value={pkg}
+                    onChange={(event) => {
+                      const name = event.target.value;
+                      setPkg(name);
+                      void listVersions(name).then((rels) => {
+                        if (!rels.length) return;
+                        setVersions(rels);
+                        setVer((current) => (rels.includes(current) ? current : rels[rels.length - 1]));
+                      });
+                    }}
+                  >
+                    {(packages.includes(pkg) ? packages : [pkg, ...packages]).map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Version
+                  <select value={ver} onChange={(event) => setVer(event.target.value)}>
+                    {(versions.includes(ver) ? versions : [ver, ...versions]).map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="ask-row">
+                  <label>
+                    From
+                    <input value={t0clock} onChange={(event) => setT0clock(event.target.value)} spellCheck={false} />
+                  </label>
+                  <label>
+                    To
+                    <input value={t1clock} onChange={(event) => setT1clock(event.target.value)} spellCheck={false} />
+                  </label>
+                </div>
+                <button className="btn" type="submit" disabled={busy}>
+                  Analyze window
+                </button>
+              </form>
+            </article>
+          </div>
+          <ol className="home-steps">
+            <li>
+              <b>Graph of record</b>
+              <span>Packages, lockfile pins, and services live in HydraDB. There is no local stand-in.</span>
+            </li>
+            <li>
+              <b>The window</b>
+              <span>Only lockfiles resolved while the version was on the registry count as exposed.</span>
+            </li>
+            <li>
+              <b>The path</b>
+              <span>Evidence starts at what package.json pinned, then the upgrade order.</span>
+            </li>
+          </ol>
+          {error ? <div className="status error banner">{error}</div> : null}
+        </section>
+      ) : (
+        <>
+      <section className="incident">
         <div>
+          <p className="incident-id">{data?.incident.slug || "INC-2026-0514-SIGNAL-BUS"}</p>
           <h1>
             <span className="pkg">
               {data?.incident.package || pkg}@{data?.incident.version || ver}
-            </span>{" "}
-            was live for {data?.summary.window_seconds || 360} seconds. Who was actually exposed?
+            </span>
+            <span className="incident-window">
+              {t0clock.slice(0, 5)}–{t1clock.slice(0, 5)} UTC
+            </span>
           </h1>
           <p>
             {counterfactual
-              ? `Counterfactual: yank at ${counterfactual.clock} instead of ${fmtTime(replay?.t1 || data?.incident.end_ts || 0)}. ${counterfactual.saved} services stay clean` +
-                (counterfactual.saved_p0.length ? `, including P0 ${counterfactual.saved_p0.join(", ")}.` : ".")
-              : data?.briefing ||
-                "Temporal reverse-closure on HydraDB: Service → Lockfile → PackageVersion, only where lock.resolved_at sits inside 09:00–09:06 UTC."}
+              ? `If yanked at ${counterfactual.clock}: ${counterfactual.saved} services stay clean` +
+                (counterfactual.saved_p0.length ? `, including ${counterfactual.saved_p0.join(", ")}.` : ".")
+              : data?.briefing || "HydraDB reverse-closure for this window. Services that resolved the version while it was live."}
           </p>
         </div>
         <div className="actions">
-          <button className="btn" disabled={busy} onClick={() => void run(true)}>
-            {busy ? "Querying HydraDB…" : "Ingest + analyze"}
-          </button>
           <button className="btn" disabled={!replay} onClick={startReplay}>
-            {playing ? "Replaying…" : "Replay 360s"}
+            {playing ? "Replaying…" : "Replay window"}
           </button>
-          <button className="btn" disabled={busy} onClick={() => lockInput.current?.click()}>
-            Add lockfile
+          <button className="btn primary" disabled={!data} onClick={() => setShowPlan(true)}>
+            Containment plan
           </button>
           <a className="btn" href={reportHref} download="hydrashield-report.md">
             Report
           </a>
-          <button className="btn primary" disabled={!data} onClick={() => setShowPlan(true)}>
-            Containment plan
-          </button>
-          <input
-            ref={lockInput}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(event) => void onLockfile(event.target.files?.[0])}
-          />
         </div>
       </section>
 
@@ -390,7 +526,7 @@ export function App() {
           <input value={t1clock} onChange={(event) => setT1clock(event.target.value)} spellCheck={false} />
         </label>
         <button className="btn compact" type="submit" disabled={busy}>
-          Analyze window
+          Apply window
         </button>
         <button
           className="btn compact"
@@ -413,7 +549,7 @@ export function App() {
               .finally(() => setBusy(false));
           }}
         >
-          09:00–09:06
+          Full window
         </button>
         <button
           className="btn compact"
@@ -436,8 +572,21 @@ export function App() {
               .finally(() => setBusy(false));
           }}
         >
-          09:00–09:02
+          Yank +2m
         </button>
+        <button className="btn compact ghost" disabled={busy} onClick={() => void run(true)} type="button">
+          Re-ingest
+        </button>
+        <button className="btn compact ghost" disabled={busy} type="button" onClick={() => lockInput.current?.click()}>
+          Add lockfile
+        </button>
+        <input
+          ref={lockInput}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(event) => void onLockfile(event.target.files?.[0])}
+        />
       </form>
 
       {error && data && <div className="status error banner">{error}</div>}
@@ -446,7 +595,7 @@ export function App() {
         <div className={`status ${error ? "error" : ""}`}>
           {error
             ? error
-            : "Waiting for HydraDB. Every number on this page is OpenCypher or algo.SPpaths / MSpaths / SSpaths — there is no local graph."}
+            : "Connecting to HydraDB…"}
         </div>
       )}
 
@@ -471,11 +620,10 @@ export function App() {
                 <span>scanner over-flags</span>
               </div>
             </div>
-            <div className="contrast">
-              <b>Why not grep?</b> A lockfile name search hits {data.contrast.scanner_name_hits} services.
-              HydraDB’s time window keeps {data.contrast.hydrashield_exposed}. The extras —
-              {data.contrast.false_positives.slice(0, 4).map((name) => ` ${name}`).join(",")}
-              {data.contrast.false_positives.length > 4 ? "…" : ""} — pinned before the window or after the yank.
+            <div className="insight">
+              A lockfile name search hits {data.contrast.scanner_name_hits} services.
+              This window keeps {data.contrast.hydrashield_exposed}. The rest pinned before
+              publish or after the yank.
             </div>
             <div className={`replay ${counterfactual ? "cf" : ""}`}>
               <div className="replay-top">
@@ -847,6 +995,8 @@ export function App() {
               </pre>
             )}
           </section>
+        </>
+      )}
         </>
       )}
     </div>
