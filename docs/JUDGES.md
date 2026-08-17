@@ -11,7 +11,7 @@ HydraDB is the product. Unplug `graph-node` and ingest/analyze return HTTP 503. 
 | Time | Beat |
 |---|---|
 | 0:00 | Problem: scanners grep lockfiles. Worms publish and yank in minutes. Grep has no time. |
-| 0:20 | Open the UI. Home is the incident desk, not the graph. Click **Open incident**. HydraDB pill is connected. (`?open=1` skips home.) |
+| 0:20 | Open the UI. Home is HydraShield, not VantaPay. Click **Open sample** on the demo ticket. (`?open=1` skips home.) |
 | 0:35 | Hit **Replay 360s**. Clock runs 09:00→09:06. Nodes light as CI lockfiles resolve. Read the ticking exposed / P0 counts. |
 | 1:10 | Click **If yanked at +2m**. `checkout-api` is still clean. Waiting three extra minutes is what put P0 checkout in the blast. |
 | 1:35 | Click **Contained**. `ledger-worker` pinned `2.4.0` at 08:41. `webhook-relay` got `2.4.2` at 09:12. Both would light up a name grep. |

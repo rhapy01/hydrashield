@@ -334,7 +334,27 @@ code,
 }
 
 .ticket {
-  box-shadow: 0 0 0 1px rgba(255, 77, 109, 0.08);
+  box-shadow: none;
+}
+
+.ticket.sample {
+  border-style: dashed;
+  border-color: var(--line-2);
+}
+
+.demo-badge {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line-2);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.muted {
+  color: var(--muted);
 }
 
 .ticket-kicker {
@@ -373,7 +393,7 @@ code,
 
 .ticket-facts {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr 1fr;
   gap: 12px;
   margin: 0 0 16px;
 }
@@ -457,6 +477,9 @@ code,
 
 .incident-id {
   margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;

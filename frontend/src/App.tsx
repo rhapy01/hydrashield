@@ -311,7 +311,7 @@ export function App() {
             Incidents
           </button>
         ) : (
-          <div className="tag">Workspace · VantaPay</div>
+          <div className="tag">Incident desk</div>
         )}
         <div className="top-meta">
           <span className={`pill ${hydra?.hydradb ? "live" : ""}`}>
@@ -337,17 +337,17 @@ export function App() {
         <section className="home">
           <div className="home-copy">
             <p className="eyebrow">Supply-chain incident desk</p>
-            <h1>A dependency just went bad. Who in this fleet pulled it while it was live?</h1>
+            <h1>A dependency just went bad. Who resolved it while it was live?</h1>
             <p className="lede">
               Open an incident for the package and the minutes it was on the registry. You get who actually
               resolved that version, the path from a direct dependency, and what to upgrade first.
             </p>
           </div>
           <div className="home-grid">
-            <article className="ticket">
+            <article className="ticket sample">
               <div className="ticket-kicker">
-                <span className="sev">SEV-1</span>
-                <span className="mono">INC-2026-0514-SIGNAL-BUS</span>
+                <span className="demo-badge">Demo</span>
+                <span className="mono muted">sample org · VantaPay</span>
               </div>
               <h2>
                 <span className="pkg">signal-bus@2.4.1</span> on the registry for six minutes
@@ -361,22 +361,18 @@ export function App() {
                   <dt>Yanked</dt>
                   <dd>09:06 UTC</dd>
                 </div>
-                <div>
-                  <dt>Org</dt>
-                  <dd>VantaPay</dd>
-                </div>
               </dl>
               <p>
-                Published at 09:00, yanked at 09:06. Open it to see which services resolved{" "}
-                <code>2.4.1</code> in those six minutes, and the upgrade order.
+                A preloaded incident so you can walk the desk. See which services resolved{" "}
+                <code>2.4.1</code> in that window, and the upgrade order.
               </p>
               <button className="btn primary lg" disabled={busy} onClick={() => void run(false)}>
-                Open incident
+                Open sample
               </button>
             </article>
             <article className="ask">
-              <h2>Different package or window</h2>
-              <p>Uses this workspace’s lockfiles. Same question: who resolved it while it was live?</p>
+              <h2>Or pick a package</h2>
+              <p>Same demo graph, different version or window.</p>
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -450,7 +446,10 @@ export function App() {
         <>
       <section className="incident">
         <div>
-          <p className="incident-id">{data?.incident.slug || "INC-2026-0514-SIGNAL-BUS"}</p>
+          <p className="incident-id">
+            <span className="demo-badge">Demo</span>
+            {data?.incident.slug || "INC-2026-0514-SIGNAL-BUS"}
+          </p>
           <h1>
             <span className="pkg">
               {data?.incident.package || pkg}@{data?.incident.version || ver}
