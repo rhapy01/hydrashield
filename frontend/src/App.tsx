@@ -311,7 +311,7 @@ export function App() {
             Incidents
           </button>
         ) : (
-          <div className="tag">VantaPay · AppSec</div>
+          <div className="tag">Workspace · VantaPay</div>
         )}
         <div className="top-meta">
           <span className={`pill ${hydra?.hydradb ? "live" : ""}`}>
@@ -336,11 +336,11 @@ export function App() {
       {screen === "home" ? (
         <section className="home">
           <div className="home-copy">
-            <p className="eyebrow">Incident desk</p>
-            <h1>Which services resolved the bad version while it was live?</h1>
+            <p className="eyebrow">Supply-chain incident desk</p>
+            <h1>A dependency just went bad. Who in this fleet pulled it while it was live?</h1>
             <p className="lede">
-              HydraShield is for the on-call who just saw an npm advisory. It asks HydraDB — the graph of packages,
-              lockfiles, and VantaPay services — not a lockfile grep. Time is part of the question.
+              Open an incident for the package and the minutes it was on the registry. You get who actually
+              resolved that version, the path from a direct dependency, and what to upgrade first.
             </p>
           </div>
           <div className="home-grid">
@@ -367,16 +367,16 @@ export function App() {
                 </div>
               </dl>
               <p>
-                Maintainer GitHub Actions OIDC was reused to publish a postinstall worm. Open this incident to see who
-                resolved <code>2.4.1</code> in that window, through which dependency path, and what to upgrade first.
+                Published at 09:00, yanked at 09:06. Open it to see which services resolved{" "}
+                <code>2.4.1</code> in those six minutes, and the upgrade order.
               </p>
               <button className="btn primary lg" disabled={busy} onClick={() => void run(false)}>
                 Open incident
               </button>
             </article>
             <article className="ask">
-              <h2>Ask about another package</h2>
-              <p>Same desk, different window. HydraDB already holds the VantaPay lockfiles.</p>
+              <h2>Different package or window</h2>
+              <p>Uses this workspace’s lockfiles. Same question: who resolved it while it was live?</p>
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -432,16 +432,16 @@ export function App() {
           </div>
           <ol className="home-steps">
             <li>
-              <b>Graph of record</b>
-              <span>Packages, lockfile pins, and services live in HydraDB. There is no local stand-in.</span>
+              <b>Pick the version and the clock</b>
+              <span>From publish until yank — only that window counts as exposure.</span>
             </li>
             <li>
-              <b>The window</b>
-              <span>Only lockfiles resolved while the version was on the registry count as exposed.</span>
+              <b>See who was in the blast</b>
+              <span>Only services that resolved that version during the window.</span>
             </li>
             <li>
-              <b>The path</b>
-              <span>Evidence starts at what package.json pinned, then the upgrade order.</span>
+              <b>Follow the path, then contain</b>
+              <span>From the package.json pin to the upgrade that removes it.</span>
             </li>
           </ol>
           {error ? <div className="status error banner">{error}</div> : null}
@@ -463,7 +463,7 @@ export function App() {
             {counterfactual
               ? `If yanked at ${counterfactual.clock}: ${counterfactual.saved} services stay clean` +
                 (counterfactual.saved_p0.length ? `, including ${counterfactual.saved_p0.join(", ")}.` : ".")
-              : data?.briefing || "HydraDB reverse-closure for this window. Services that resolved the version while it was live."}
+              : data?.briefing || "Services that resolved this version while it was on the registry."}
           </p>
         </div>
         <div className="actions">

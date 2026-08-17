@@ -355,10 +355,8 @@ class Analyzer:
         production = [row for row in ranked if row["env"] == "production"]
         p0 = [row for row in ranked if row["criticality"] == "P0"]
         briefing = (
-            f"{len(ranked)} VantaPay services resolved {package}@{version} while it was live "
-            f"({window_len}s). {len(p0)} of those are P0 production. "
-            f"A name grep of lockfiles would also flag {len(false_positives)} services that "
-            f"never resolved the malicious version in-window — including pins before 09:00 and after the yank."
+            f"{len(ranked)} services in this workspace resolved {package}@{version} while it was live "
+            f"({window_len}s). {len(p0)} of those are P0 production."
         )
         return {
             "engine": "hydradb",
