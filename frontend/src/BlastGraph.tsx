@@ -5,6 +5,7 @@ type Props = {
   selected?: string;
   hotIds?: number[];
   liveNames?: string[];
+  arriving?: string[];
   onSelect: (name: string) => void;
 };
 
@@ -21,7 +22,7 @@ function radiusFor(kind: string, index: number): number {
   return 230;
 }
 
-export function BlastGraph({ data, selected, hotIds = [], liveNames, onSelect }: Props) {
+export function BlastGraph({ data, selected, hotIds = [], liveNames, arriving = [], onSelect }: Props) {
   const width = 920;
   const height = 520;
   const cx = width / 2;
@@ -79,7 +80,13 @@ export function BlastGraph({ data, selected, hotIds = [], liveNames, onSelect }:
       {[...layout.values()].map(({ x, y, node }) => {
         const live = !liveNames || node.kind !== "service" || liveNames.includes(node.name);
         const active = selected === node.name || selected === node.label || hot.has(node.id);
-        const r = node.kind === "compromised" ? 11 : node.kind === "service" ? 7 : 5.5;
+        const justArrived = node.kind === "service" && arriving.includes(node.name);
+        const r = node.kind === "compromised" ? 11 : node.kind === "service" ? justArrived ? 9 : 7 : 5.5;
+        const showLabel =
+          node.kind === "compromised" ||
+          active ||
+          justArrived ||
+          (node.kind === "service" && node.criticality === "P0" && live);
         return (
           <g
             key={node.id}
@@ -88,20 +95,23 @@ export function BlastGraph({ data, selected, hotIds = [], liveNames, onSelect }:
             style={{ cursor: node.kind === "service" && live ? "pointer" : "default" }}
             onClick={() => node.kind === "service" && live && onSelect(node.name)}
           >
+            <title>{node.label || node.name}</title>
             <circle
               r={r + (active ? 3 : 0)}
               fill={KIND_FILL[node.kind] || "#5aa7ff"}
               opacity={active ? 1 : 0.9}
             />
-            <text
-              y={r + 12}
-              textAnchor="middle"
-              fill={active ? "#e6eef5" : "#7d8d9c"}
-              fontSize={10}
-              fontFamily="IBM Plex Mono, monospace"
-            >
-              {node.kind === "service" ? node.name : node.label}
-            </text>
+            {showLabel ? (
+              <text
+                y={r + 12}
+                textAnchor="middle"
+                fill={active || justArrived ? "#e6eef5" : "#7d8d9c"}
+                fontSize={10}
+                fontFamily="IBM Plex Mono, monospace"
+              >
+                {node.kind === "service" ? node.name : node.label}
+              </text>
+            ) : null}
           </g>
         );
       })}

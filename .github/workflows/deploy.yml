@@ -1,0 +1,68 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: always-live
+  cancel-in-progress: true
+
+jobs:
+  fly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      APP: rhapy01-hydrashield
+      REGION: iad
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require Fly token
+        id: token
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "missing=true" >> "$GITHUB_OUTPUT"
+            echo "Add repo secret FLY_API_TOKEN so HydraShield stays live at https://${APP}.fly.dev"
+            echo "One-time: flyctl auth login && flyctl tokens create deploy -x 999999h && gh secret set FLY_API_TOKEN"
+            echo "::notice::Skipping Fly deploy until FLY_API_TOKEN is set"
+          else
+            echo "missing=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        if: steps.token.outputs.missing == 'false'
+
+      - name: Ensure app, IP, and volume
+        if: steps.token.outputs.missing == 'false'
+        run: |
+          flyctl status -a "$APP" >/dev/null 2>&1 || flyctl apps create "$APP"
+          flyctl ips allocate-v4 -a "$APP" --shared || true
+          if flyctl volumes list -a "$APP" | grep -q hydradb_data; then
+            echo "volume exists"
+          else
+            flyctl volumes create hydradb_data --region "$REGION" --size 3 --yes -a "$APP"
+          fi
+
+      - name: Deploy
+        if: steps.token.outputs.missing == 'false'
+        run: flyctl deploy --remote-only --ha=false -a "$APP"
+
+      - name: Probe
+        if: steps.token.outputs.missing == 'false'
+        run: |
+          URL="https://${APP}.fly.dev"
+          echo "LIVE=$URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Always on:** $URL" >> "$GITHUB_STEP_SUMMARY"
+          for i in $(seq 1 40); do
+            if curl -fsS "$URL" >/dev/null 2>&1; then
+              echo "UI is up"
+              curl -fsS "$URL/api/health" || true
+              exit 0
+            fi
+            sleep 8
+          done
+          echo "Deployed but health probe still warming (ingest can take a few minutes)."

@@ -45,7 +45,29 @@ MATCH (pkg:Package)-[:SIMILAR_NAME_TO]->(other:Package)
 WHERE pkg.name = $name
 RETURN other.name AS name
 
--- Evidence path (native GraphBLAS-backed procedure)
+-- Direct package.json pins (evidence path sources)
+MATCH (lock:LockfileSnapshot {id: $lock})-[:PINS]->(pv:PackageVersion)
+RETURN pv.id AS id, pv.name AS name, pv.version AS version
+
+-- Evidence path (native GraphBLAS-backed batch procedure)
+CALL algo.MSpaths({
+  sourceLabel: 'PackageVersion',
+  sourceProperty: 'slug',
+  sourceValues: $sources,
+  targetLabel: 'PackageVersion',
+  targetProperty: 'slug',
+  targetValues: $targets,
+  pairwise: false,
+  relTypes: ['DEPENDS_ON'],
+  relDirection: 'outgoing',
+  maxLen: 6,
+  pathCount: 3,
+  resultLimit: 120
+})
+YIELD path
+RETURN path
+
+-- Evidence path (single pair)
 CALL algo.SPpaths({
   sourceNode: $source,
   targetNode: $target,

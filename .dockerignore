@@ -1,0 +1,14 @@
+.git
+.github
+**/.venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+frontend/dist
+hydradb-data/store
+hydradb-data/cache
+hydradb-data/node.log
+*.log
+.cursor
+docs
+backend/tests

@@ -57,6 +57,21 @@ code,
   min-height: 100vh;
   display: grid;
   grid-template-rows: auto auto 1fr;
+  position: relative;
+}
+
+.busy-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(7, 9, 12, 0.55);
+  color: var(--accent);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: all;
 }
 
 .topbar {
@@ -388,7 +403,17 @@ code,
 }
 
 .svc.contained {
-  cursor: default;
+  cursor: pointer;
+}
+
+.story-link {
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.story-link:hover {
+  color: var(--accent);
 }
 
 .nb-note {
@@ -618,8 +643,6 @@ code,
 .answers span {
   font-size: 13px;
 }
-  margin: 0 6px;
-}
 
 .side {
   display: grid;
@@ -706,6 +729,17 @@ code,
 .evidence h3 {
   margin: 0 0 8px;
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.evidence-why {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .path {
@@ -769,6 +803,21 @@ code,
 .drawer {
   border-top: 1px solid var(--line);
   background: #080c10;
+}
+
+.drawer h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer-copy {
+  margin-left: auto;
+}
+
+.status.banner {
+  padding: 10px 22px;
 }
 
 .drawer pre {

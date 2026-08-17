@@ -65,6 +65,7 @@ class HydraDB:
         self.retries = max(1, retries)
         self.bookmark: str | None = None
         self.query_log: list[dict[str, Any]] = []
+        self._vertex_cache: dict[int, dict[str, Any]] = {}
         self._client = httpx.Client(timeout=timeout)
 
     def close(self) -> None:
@@ -238,37 +239,125 @@ class HydraDB:
     def many_shortest_paths(
         self, sources: list[int], target: int, rel: str, max_len: int = 6
     ) -> dict[int, list[int]]:
-        """Batch evidence paths via algo.MSpaths (one snapshot, no client fan-out)."""
+        """Batch evidence paths via algo.MSpaths (one snapshot, no client fan-out).
+
+        HydraDB resolves MSpaths through a property index. Vertex `id` is not
+        that index — `slug` (`name@version`) is, matching the documented
+        sourceLabel/sourceProperty/sourceValues shape.
+        """
         unique = [int(s) for s in dict.fromkeys(sources) if int(s) != int(target)]
         out: dict[int, list[int]] = {}
         if not unique:
             return out
+        slug_of, _id_of = self._version_slugs(unique + [int(target)])
+        source_slugs = [slug_of[s] for s in unique if s in slug_of]
+        target_slug = slug_of.get(int(target))
+        rows: list[dict[str, Any]] = []
+        cypher = (
+            "CALL algo.MSpaths({"
+            "sourceLabel: 'PackageVersion', sourceProperty: 'slug', sourceValues: $sources, "
+            "targetLabel: 'PackageVersion', targetProperty: 'slug', targetValues: $targets, "
+            "pairwise: false, "
+            f"relTypes: ['{rel}'], relDirection: 'outgoing', maxLen: {int(max_len)}, "
+            "pathCount: 3, resultLimit: 120}) "
+            "YIELD path RETURN path"
+        )
+        params: dict[str, Any] = {"sources": source_slugs, "targets": [target_slug] if target_slug else []}
         try:
-            rows = self.rows(
-                "CALL algo.MSpaths({"
-                "sourceLabel: 'PackageVersion', sourceProperty: 'id', sourceValues: $sources, "
-                "targetLabel: 'PackageVersion', targetProperty: 'id', targetValues: $targets, "
-                "pairwise: false, "
-                f"relTypes: ['{rel}'], relDirection: 'outgoing', maxLen: {int(max_len)}, "
-                "pathCount: 1, resultLimit: 120}) "
-                "YIELD path RETURN path",
-                {"sources": unique, "targets": [int(target)]},
-                log_name="ms_paths",
+            if source_slugs and target_slug:
+                logged = False
+                for chunk in _chunks(source_slugs, 16):
+                    rows.extend(
+                        self.rows(
+                            cypher,
+                            {"sources": chunk, "targets": [target_slug]},
+                            log_name="ms_paths" if not logged else None,
+                            timeout_ms=60_000,
+                        )
+                    )
+                    logged = True
+                if not logged:
+                    self.query_log.append(
+                        {
+                            "name": "ms_paths",
+                            "cypher": cypher,
+                            "parameters": params,
+                            "row_count": 0,
+                            "engine": self.engine,
+                        }
+                    )
+        except HydraDBError as exc:
+            self.query_log.append(
+                {
+                    "name": "ms_paths",
+                    "cypher": cypher,
+                    "parameters": {**params, "error": str(exc)[:500]},
+                    "row_count": 0,
+                    "engine": self.engine,
+                }
             )
-        except HydraDBError:
             rows = []
+        grouped: dict[int, list[list[int]]] = {}
         for row in rows:
             ids = _path_ids(row.get("path"))
-            if len(ids) >= 2:
-                src = ids[0]
-                if src not in out or len(ids) < len(out[src]):
-                    out[src] = ids
+            if len(ids) < 2:
+                continue
+            grouped.setdefault(ids[0], []).append(ids)
+        for src, paths in grouped.items():
+            best = self._best_named_path(paths)
+            if best:
+                out[src] = best
         missing = [s for s in unique if s not in out]
         for src in missing:
             path = self.shortest_path(src, target, rel, max_len)
             if path:
                 out[src] = path
         return out
+
+    def _version_slugs(self, ids: list[int]) -> tuple[dict[int, str], dict[str, int]]:
+        unique_ids = list(dict.fromkeys(int(i) for i in ids))
+        rows: list[dict[str, Any]] = []
+        try:
+            rows = self.rows(
+                "UNWIND $ids AS vid MATCH (v:PackageVersion {id: vid}) "
+                "RETURN v.id AS id, v.slug AS slug, v.name AS name, v.version AS version",
+                {"ids": unique_ids},
+            )
+        except HydraDBError:
+            for vid in unique_ids:
+                rows.extend(
+                    self.rows(
+                        "MATCH (v:PackageVersion {id: $id}) "
+                        "RETURN v.id AS id, v.slug AS slug, v.name AS name, v.version AS version",
+                        {"id": vid},
+                    )
+                )
+        slug_of: dict[int, str] = {}
+        id_of: dict[str, int] = {}
+        for row in rows:
+            vid = int(row["id"])
+            slug = row.get("slug") or (
+                f"{row.get('name')}@{row.get('version')}" if row.get("name") else None
+            )
+            if not slug:
+                continue
+            slug_of[vid] = str(slug)
+            id_of[str(slug)] = vid
+        return slug_of, id_of
+
+    def _best_named_path(self, paths: list[list[int]]) -> list[int]:
+        named: list[list[tuple[str, int]]] = []
+        for path in paths:
+            hops: list[tuple[str, int]] = []
+            for vid in path:
+                node = self.vertex(vid) or {}
+                hops.append((str(node.get("name") or ""), int(vid)))
+            if hops:
+                named.append(hops)
+        if not named:
+            return []
+        best = min(named, key=lambda path: (len(path), [name for name, _vid in path]))
+        return [vid for _name, vid in best]
 
     def reverse_dependents(self, bad_id: int, max_len: int = 6) -> list[dict[str, Any]]:
         try:
@@ -339,17 +428,18 @@ class HydraDB:
         try:
             rows = self.rows(
                 "CALL algo.SPpaths({sourceNode: $source, targetNode: $target, "
-                f"relTypes: ['{rel}'], relDirection: 'outgoing', maxLen: {int(max_len)}, pathCount: 1}}) "
+                f"relTypes: ['{rel}'], relDirection: 'outgoing', maxLen: {int(max_len)}, pathCount: 3}}) "
                 "YIELD path RETURN path",
                 {"source": source, "target": target},
-                log_name="sp_path",
+                log_name="sp_path" if not any(item.get("name") == "sp_path" for item in self.query_log) else None,
             )
         except HydraDBError:
             return []
-        if not rows:
+        paths = [_path_ids(row.get("path")) for row in rows]
+        paths = [path for path in paths if len(path) >= 2]
+        if not paths:
             return []
-        path = rows[0].get("path")
-        return _path_ids(path)
+        return self._best_named_path(paths)
 
     def neighbors(self, vid: int, rel: str, *, incoming: bool = False) -> list[dict[str, Any]]:
         if incoming:
@@ -362,15 +452,52 @@ class HydraDB:
                 f"MATCH (s {{id: $id}})-[:{rel}]->(d) "
                 "RETURN d.id AS id, d.name AS name, d.version AS version, d.kind AS kind"
             )
-        return self.rows(cypher, {"id": vid}, log_name="neighbors")
+        return self.rows(cypher, {"id": vid})
 
     def lockfile_resolves(self, lock_id: int) -> list[dict[str, Any]]:
-        return self.rows(
-            "MATCH (lock:LockfileSnapshot {id: $lock})-[:RESOLVES]->(pv:PackageVersion) "
-            "RETURN pv.id AS id, pv.name AS name, pv.version AS version",
-            {"lock": lock_id},
-            log_name="lockfile_resolves",
+        return self.lockfiles_resolves([lock_id]).get(int(lock_id), [])
+
+    def lockfile_pins(self, lock_id: int) -> list[dict[str, Any]]:
+        """Direct package.json pins — evidence paths start here, not at a transitive 1-hop."""
+        return self.lockfiles_pins([lock_id]).get(int(lock_id), [])
+
+    def lockfiles_resolves(self, lock_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
+        return self._lockfile_map(lock_ids, "RESOLVES", "lockfile_resolves")
+
+    def lockfiles_pins(self, lock_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
+        return self._lockfile_map(lock_ids, "PINS", "lockfile_pins")
+
+    def _lockfile_map(self, lock_ids: list[int], rel: str, log_name: str) -> dict[int, list[dict[str, Any]]]:
+        ids = list(dict.fromkeys(int(i) for i in lock_ids))
+        out: dict[int, list[dict[str, Any]]] = {lid: [] for lid in ids}
+        if not ids:
+            return out
+        cypher = (
+            "UNWIND $locks AS lock_id "
+            f"MATCH (lock:LockfileSnapshot {{id: lock_id}})-[:{rel}]->(pv:PackageVersion) "
+            "RETURN lock.id AS lock_id, pv.id AS id, pv.name AS name, pv.version AS version"
         )
+        try:
+            rows = self.rows(cypher, {"locks": ids}, log_name=log_name)
+        except HydraDBError:
+            rows = []
+            for i, lid in enumerate(ids):
+                rows.extend(
+                    [
+                        {**row, "lock_id": lid}
+                        for row in self.rows(
+                            f"MATCH (lock:LockfileSnapshot {{id: $lock}})-[:{rel}]->(pv:PackageVersion) "
+                            "RETURN pv.id AS id, pv.name AS name, pv.version AS version",
+                            {"lock": lid},
+                            log_name=log_name if i == 0 else None,
+                        )
+                    ]
+                )
+        for row in rows:
+            lid = int(row.get("lock_id") or 0)
+            if lid in out:
+                out[lid].append(row)
+        return out
 
     def list_services(self) -> list[dict[str, Any]]:
         return self.rows(
@@ -426,15 +553,21 @@ class HydraDB:
         )
 
     def vertex(self, vid: int) -> dict[str, Any] | None:
+        key = int(vid)
+        if key in self._vertex_cache:
+            return self._vertex_cache[key]
         rows = self.rows(
             "MATCH (n {id: $id}) RETURN n.id AS id, n.name AS name, n.version AS version, "
             "n.kind AS kind, n.env AS env, n.criticality AS criticality",
-            {"id": vid},
+            {"id": key},
         )
-        return rows[0] if rows else None
+        node = rows[0] if rows else None
+        if node:
+            self._vertex_cache[key] = node
+        return node
 
 
-def _chunks(rows: list[dict[str, Any]], size: int):
+def _chunks(rows: list[Any], size: int):
     for i in range(0, len(rows), size):
         yield rows[i : i + size]
 

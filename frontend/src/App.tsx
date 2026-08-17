@@ -7,8 +7,10 @@ import {
   ingest,
   listPackages,
   listVersions,
+  health,
   uploadLockfile,
   whyLabel,
+  whyDetail,
   type AnalyzeResponse,
   type DelayCost,
   type ExposedService,
@@ -53,6 +55,7 @@ export function App() {
   const [t1clock, setT1clock] = useState("09:06:00");
   const [packages, setPackages] = useState<string[]>(["signal-bus"]);
   const [versions, setVersions] = useState<string[]>(["2.4.0", "2.4.1", "2.4.2"]);
+  const [hydra, setHydra] = useState<{ hydradb: boolean; ingested: boolean } | null>(null);
 
   function applyResult(result: AnalyzeResponse) {
     setData(result);
@@ -63,8 +66,14 @@ export function App() {
     setT1clock(clockOf(result.incident.end_ts));
     const rels = result.blast?.introducing.releases.map((row) => row.version).filter(Boolean);
     if (rels?.length) setVersions(rels);
-    const first = result.exposed[0]?.name;
-    if (first) setSelected(first);
+    setYankMinutes(null);
+    setPlaying(false);
+    setSelected((current) => {
+      const names = result.exposed.map((row) => row.name);
+      if (current && names.includes(current)) return current;
+      if (names.includes("checkout-api")) return "checkout-api";
+      return names[0] || current;
+    });
   }
 
   async function run(seed: boolean) {
@@ -98,6 +107,24 @@ export function App() {
     });
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    async function ping() {
+      try {
+        const body = await health();
+        if (alive) setHydra({ hydradb: body.hydradb, ingested: body.ingested });
+      } catch {
+        if (alive) setHydra({ hydradb: false, ingested: false });
+      }
+    }
+    void ping();
+    const id = window.setInterval(ping, 15000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, []);
+
   const replay = data?.replay;
   const frame = replay ? frameAt(replay, playhead) : undefined;
   const liveNames = frame?.exposed_names ?? data?.exposed.map((row) => row.name);
@@ -110,6 +137,8 @@ export function App() {
         const next = head + 2;
         if (next >= replay.t1) {
           setPlaying(false);
+          setTab("exposed");
+          setSelected("checkout-api");
           return replay.t1;
         }
         return next;
@@ -124,10 +153,58 @@ export function App() {
     setTab("exposed");
   }, [playing, frame?.at, frame?.new]);
 
+  const selectedContained = useMemo(
+    () => data?.contained.find((row) => row.name === selected),
+    [data, selected],
+  );
+
   const selectedRow: ExposedService | undefined = useMemo(
     () => data?.exposed.find((row) => row.name === selected),
     [data, selected],
   );
+
+  useEffect(() => {
+    document.querySelector(".svc.active")?.scrollIntoView({ block: "nearest" });
+  }, [selected, tab]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      if (event.key === " " || event.code === "Space") {
+        event.preventDefault();
+        if (playing) setPlaying(false);
+        else startReplay();
+        return;
+      }
+      if (event.key === "2" && replay) {
+        const row = replay.delay_cost.find((item) => item.minutes === 2);
+        if (row) jumpYank(row);
+        return;
+      }
+      if (event.key === "Escape" || event.key === "6") {
+        setYankMinutes(null);
+        if (replay) setPlayhead(replay.t1);
+        return;
+      }
+      if (event.key === "c" || event.key === "C") {
+        setTab("contained");
+        setShowPlan(false);
+        const preferred = data?.contained.find((row) => row.name === "ledger-worker") || data?.contained[0];
+        if (preferred) setSelected(preferred.name);
+        return;
+      }
+      if (event.key === "e" || event.key === "E") {
+        setTab("exposed");
+        setShowPlan(false);
+        if (data?.exposed.some((row) => row.name === "checkout-api")) setSelected("checkout-api");
+        return;
+      }
+      if (event.key === "p" || event.key === "P") setShowPlan((open) => !open);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [playing, replay, data]);
 
   const hotIds = useMemo(() => {
     if (!selectedRow || (liveNames && !liveNames.includes(selectedRow.name))) return [];
@@ -141,8 +218,18 @@ export function App() {
     return data.exposed.filter((row) => liveNames.includes(row.name));
   }, [data, liveNames]);
 
+  const reportHref = (() => {
+    const params = new URLSearchParams({ package: pkg, version: ver });
+    if (data) {
+      const base = data.incident.start_ts;
+      params.set("start_ts", String(clockToTs(base, t0clock)));
+      params.set("end_ts", String(clockToTs(base, t1clock)));
+    }
+    return `/api/analyze/report?${params.toString()}`;
+  })();
+
   const query = data?.queries.find((item) => item.name === queryName) ?? data?.queries[0];
-  const featured = ["compromised_in", "direct_lockfile_hits", "package_releases", "ms_paths", "sp_path", "reverse_dependents", "shared_infra", "typosquats"];
+  const featured = ["compromised_in", "direct_lockfile_hits", "lockfile_pins", "package_releases", "ms_paths", "sp_path", "reverse_dependents", "shared_infra", "typosquats"];
 
   async function onLockfile(file: File | undefined) {
     if (!file) return;
@@ -193,7 +280,8 @@ export function App() {
   }, [replay]);
 
   return (
-    <div className="app">
+    <div className={`app ${busy ? "is-busy" : ""}`}>
+      {busy ? <div className="busy-mask">Querying HydraDB…</div> : null}
       <header className="topbar">
         <div className="brand">
           <Mark />
@@ -204,7 +292,12 @@ export function App() {
         <div className="tag">360-second blast radius</div>
         <div className="top-meta">
           <span>VantaPay · npm · Track 2A</span>
-          <span className={`pill live`}>{data?.engine === "hydradb" ? "HydraDB · live graph" : "HydraDB required"}</span>
+          <a className="story-link" href="/hydradb-story.html" target="_blank" rel="noreferrer">
+            HydraDB in 60s
+          </a>
+          <span className={`pill ${hydra?.hydradb ? "live" : ""}`}>
+            {hydra?.hydradb ? "HydraDB · live graph" : "HydraDB required"}
+          </span>
         </div>
       </header>
 
@@ -234,7 +327,7 @@ export function App() {
           <button className="btn" disabled={busy} onClick={() => lockInput.current?.click()}>
             Add lockfile
           </button>
-          <a className="btn" href="/api/analyze/report" download="hydrashield-report.md">
+          <a className="btn" href={reportHref} download="hydrashield-report.md">
             Report
           </a>
           <button className="btn primary" disabled={!data} onClick={() => setShowPlan(true)}>
@@ -347,6 +440,8 @@ export function App() {
         </button>
       </form>
 
+      {error && data && <div className="status error banner">{error}</div>}
+
       {!data && (
         <div className={`status ${error ? "error" : ""}`}>
           {error
@@ -430,6 +525,7 @@ export function App() {
                 selected={selected}
                 hotIds={hotIds}
                 liveNames={liveNames}
+                arriving={frame.new}
                 onSelect={setSelected}
               />
               <div className="legend">
@@ -466,11 +562,26 @@ export function App() {
 
           <aside className="side">
             <div className="tabs">
-              <button className={tab === "exposed" ? "on" : ""} onClick={() => setTab("exposed")}>
+              <button
+                className={tab === "exposed" ? "on" : ""}
+                onClick={() => {
+                  setTab("exposed");
+                  setShowPlan(false);
+                  if (data.exposed.some((row) => row.name === "checkout-api")) setSelected("checkout-api");
+                }}
+              >
                 Exposed ({liveExposed.length}
                 {liveExposed.length !== data.exposed.length ? `/${data.exposed.length}` : ""})
               </button>
-              <button className={tab === "contained" ? "on" : ""} onClick={() => setTab("contained")}>
+              <button
+                className={tab === "contained" ? "on" : ""}
+                onClick={() => {
+                  setTab("contained");
+                  setShowPlan(false);
+                  const preferred = data.contained.find((row) => row.name === "ledger-worker") || data.contained[0];
+                  if (preferred) setSelected(preferred.name);
+                }}
+              >
                 Contained ({data.contained.length})
               </button>
             </div>
@@ -499,7 +610,14 @@ export function App() {
             ) : (
               <div className="list">
                 {data.contained.map((row) => (
-                  <div key={row.name} className="svc contained">
+                  <button
+                    key={row.name}
+                    className={`svc contained ${selected === row.name ? "active" : ""}`}
+                    onClick={() => {
+                      setSelected(row.name);
+                      setShowPlan(false);
+                    }}
+                  >
                     <span className={`crit ${row.criticality}`}>{row.criticality}</span>
                     <span>
                       <div className="name">{row.name}</div>
@@ -509,7 +627,7 @@ export function App() {
                         {row.resolved_at ? ` · ${fmtTime(row.resolved_at)}` : ""}
                       </div>
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -525,6 +643,15 @@ export function App() {
                     </li>
                   ))}
                   <li>{data.remediation.rotate.reason}</li>
+                  {data.next_hop.packages.length ? (
+                    <li>
+                      {data.next_hop.reason}{" "}
+                      {data.next_hop.packages
+                        .map((item) => item.name)
+                        .slice(0, 6)
+                        .join(", ")}
+                    </li>
+                  ) : null}
                   {data.remediation.review.map((item) => (
                     <li key={item.package}>
                       Review <code>{item.package}</code>: {item.reason}
@@ -537,6 +664,30 @@ export function App() {
                   ))}
                 </ol>
               </div>
+            ) : tab === "contained" && selectedContained ? (
+              <div className="evidence">
+                <h3>
+                  Contained · {selectedContained.name} · {selectedContained.env}
+                </h3>
+                <p className="evidence-why">{whyDetail(selectedContained, data.incident.package)}</p>
+                <div className="path">
+                  <span className="hop">{selectedContained.name}</span>
+                  {selectedContained.pinned_version ? (
+                    <>
+                      <span className="arrow">→</span>
+                      <span className="hop">
+                        {data.incident.package}@{selectedContained.pinned_version}
+                      </span>
+                    </>
+                  ) : null}
+                  {selectedContained.resolved_at ? (
+                    <>
+                      <span className="arrow">→</span>
+                      <span className="hop">{fmtTime(selectedContained.resolved_at)}</span>
+                    </>
+                  ) : null}
+                </div>
+              </div>
             ) : (
               selectedRow &&
               tab === "exposed" &&
@@ -544,7 +695,33 @@ export function App() {
                 <div className="evidence">
                   <h3>
                     Evidence · {selectedRow.name} · {selectedRow.env}
+                    <button
+                      className="btn compact"
+                      type="button"
+                      onClick={() => {
+                        const hops = [
+                          selectedRow.name,
+                          selectedRow.application,
+                          ...selectedRow.path.map((hop) => `${hop.name}@${hop.version}`),
+                        ];
+                        void navigator.clipboard.writeText(hops.join(" → "));
+                      }}
+                    >
+                      Copy path
+                    </button>
                   </h3>
+                  <p className="evidence-why">
+                    Starts at a package.json pin (<code>Lockfile-[:PINS]-&gt;</code>), not a
+                    flattened transitive hop. Path from HydraDB{" "}
+                    <code>
+                      {data.path_engine === "ms_paths"
+                        ? "algo.MSpaths"
+                        : data.path_engine === "sp_path"
+                          ? "algo.SPpaths"
+                          : "MATCH"}
+                    </code>
+                    .
+                  </p>
                   <div className="path">
                     <span className="hop">{selectedRow.name}</span>
                     <span className="arrow">→</span>
@@ -642,13 +819,22 @@ export function App() {
                 onChange={(event) => setQueryName(event.target.value)}
                 className="pill"
               >
-                {data.queries.map((item) => (
-                  <option key={item.name} value={item.name}>
+                {data.queries.map((item, idx) => (
+                  <option key={`${item.name}-${idx}`} value={item.name}>
                     {item.name}
                     {featured.includes(item.name) ? " ★" : ""}
                   </option>
                 ))}
               </select>
+              {query ? (
+                <button
+                  className="btn compact drawer-copy"
+                  type="button"
+                  onClick={() => void navigator.clipboard.writeText(query.cypher)}
+                >
+                  Copy Cypher
+                </button>
+              ) : null}
             </h2>
             {query && (
               <pre>
@@ -657,6 +843,7 @@ export function App() {
                 {JSON.stringify(query.parameters, null, 2)}
                 {"\n\n"}
                 {query.row_count} rows · snapshot-consistent read · engine {data.engine}
+                {typeof query.parameters?.error === "string" ? `\n\nprocedure error: ${query.parameters.error}` : ""}
               </pre>
             )}
           </section>

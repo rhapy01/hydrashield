@@ -13,7 +13,7 @@ This is not “does this lockfile contain package X?” A scanner can answer tha
 1. Ingests a curated npm universe plus 28 VantaPay application lockfiles.
 2. Writes labeled vertices and typed edges into HydraDB.
 3. Marks `signal-bus@2.4.1` as live from 09:00–09:06 UTC on 2026-05-14.
-4. Runs snapshot-consistent OpenCypher (and native `algo.SPpaths` / `algo.SSpaths`) to compute:
+4. Runs snapshot-consistent OpenCypher and native `algo.MSpaths` / `SPpaths` / `SSpaths` to compute:
    - time-qualified reverse exposure of internal services
    - exact dependency paths for evidence
    - ecosystem reverse dependents
@@ -31,7 +31,7 @@ HydraDB is not a cache sitting under a SQL model. The product’s central action
 | OpenCypher `MATCH` with bounded variable-length `DEPENDS_ON*1..6` | Ecosystem reverse closure |
 | `MATCH (p:Package)-[:HAS_RELEASE]->(v:PackageVersion)` | Introducing version |
 | `WHERE lock.resolved_at >= $t0 AND lock.resolved_at <= $t1` | Temporal window (the 09:00–09:06 question) |
-| `algo.MSpaths` | Batch evidence paths from lockfile pins to the compromised version |
+| `algo.MSpaths` on `PackageVersion.slug` | Batch evidence paths from lockfile **pins** to the compromised version |
 | `algo.SPpaths` | Fallback single-pair evidence path |
 | `algo.SSpaths` | Reverse dependents out of the compromised node |
 | Causal bookmarks + optional `strong` consistency on the first read | Report does not mix topology from two snapshots |
@@ -57,15 +57,28 @@ docker compose up --build
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The API waits for HydraDB, ingests the graph, then the UI runs **Analyze**.
 
-### Live demo (no local Docker)
+For a 60-second picture of HydraDB before the product demo, open [`docs/hydradb-story.html`](docs/hydradb-story.html) in a browser (Play again / space).
 
-This machine does not need Docker. GitHub Actions runs HydraDB, the API, and the UI, then publishes a Cloudflare URL for ~90 minutes.
+### Always-on demo
 
-1. Open the **Actions** tab → **Live demo** → **Run workflow**
-2. Open the run, wait until **Open public tunnel** finishes
-3. The URL is in the job summary (`https://….trycloudflare.com`)
+**[https://rhapy01-hydrashield.fly.dev](https://rhapy01-hydrashield.fly.dev)** — HydraDB + API + UI, 24/7. Pushes to `main` redeploy it. The 90-minute Cloudflare tunnel is a backup (`Actions → Live demo`).
 
-Re-run the workflow whenever you need a fresh URL.
+One-time Fly setup (repo secret):
+
+```bash
+flyctl auth login
+flyctl tokens create deploy -x 999999h
+gh secret set FLY_API_TOKEN
+```
+
+Then `Actions → Deploy → Run workflow`, or push to `main`.
+
+### Live demo backup (90 minutes, no Fly account)
+
+GitHub Actions can still boot the stack and publish a Cloudflare URL.
+
+1. Open **Actions** → **Live demo** → **Run workflow**
+2. The URL is in the job summary (`https://….trycloudflare.com`)
 
 If the image cannot write the bind-mounted store on Windows, run the containers as root (compose already does not remap UID) and confirm `hydradb-data/store` exists.
 
@@ -110,7 +123,7 @@ Full beats: [docs/JUDGES.md](docs/JUDGES.md).
 1. Headline: pick package / version / window. HydraDB pill is green. Default `signal-bus@2.4.1` 09:00–09:06.
 2. **Replay 360s**: clock 09:00→09:06, nodes light as lockfiles resolve. Then **If yanked at +2m** — `checkout-api` is still clean.
 3. Yellow strip: name-grep over-flags vs in-window exposure. Click **Contained** — `ledger-worker` (08:41 / 2.4.0) and `webhook-relay` (09:12 / 2.4.2).
-4. Click `checkout-api`. Path highlights: `payments-core → event-router → signal-bus@2.4.1` from `algo.MSpaths`.
+4. Click `checkout-api`. Path highlights: `payments-core → event-router → signal-bus@2.4.1` from a package.json pin (`PINS`), then `algo.MSpaths`.
 5. **Complete blast radius**: org / ecosystem / adjacent rings. HAS_RELEASE: `2.4.0` clean → `2.4.1` introduced → `2.4.2` patched. Containment plan + Cypher drawer.
 
 Services that locked **before** 09:00 or **after** the yank are on Contained, not Exposed. That is the temporal argument a scanner cannot make.
@@ -129,12 +142,15 @@ docker-compose.yml     HydraDB + API + UI
 
 ```
 (Service)-[:RUNS]->(Application)-[:HAS_LOCKFILE]->(LockfileSnapshot)-[:RESOLVES]->(PackageVersion)
+(LockfileSnapshot)-[:PINS]->(PackageVersion)
 (Package)-[:HAS_RELEASE]->(PackageVersion)-[:DEPENDS_ON]->(PackageVersion)
 (Package)-[:MAINTAINED_BY]->(Maintainer)
 (Package)-[:PUBLISHED_VIA]->(Infrastructure)
 (Package)-[:SIMILAR_NAME_TO]->(Package)
 (PackageVersion)-[:COMPROMISED_IN]->(IncidentWindow)
 ```
+
+`RESOLVES` is the flattened lockfile. `PINS` is what `package.json` declared. Evidence paths start at `PINS` so a transitive 1-hop does not steal the story.
 
 Vertex ids are integers (HydraDB requirement). Names, versions, criticality, and unix timestamps are properties.
 

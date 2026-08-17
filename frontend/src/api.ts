@@ -12,6 +12,7 @@ export type ExposedService = {
   commit: string;
   depth: number;
   direct_pin: boolean;
+  from_pin?: boolean;
   score: number;
   path: PathHop[];
   path_packages: string[];
@@ -108,6 +109,7 @@ export type AnalyzeResponse = {
   replay: Replay;
   blast: Blast;
   queries: QueryLog[];
+  path_engine?: "ms_paths" | "sp_path" | "match";
 };
 
 export type BlastRing = {
@@ -227,6 +229,13 @@ export async function listVersions(name: string): Promise<string[]> {
   return (body.versions || []).map((row: { version: string }) => row.version).filter(Boolean);
 }
 
+export async function health(): Promise<{ hydradb: boolean; ingested: boolean; ok: boolean }> {
+  const res = await fetch("/api/health");
+  if (!res.ok) return { hydradb: false, ingested: false, ok: false };
+  const body = await res.json();
+  return { hydradb: !!body.hydradb, ingested: !!body.ingested, ok: !!body.ok };
+}
+
 export function fmtTime(unix: number): string {
   return new Date(unix * 1000).toISOString().slice(11, 19) + "Z";
 }
@@ -248,4 +257,21 @@ export function whyLabel(why: string): string {
   if (why === "other_version") return "Different version in-window";
   if (why === "no_pin") return "Never resolved this package";
   return why;
+}
+
+export function whyDetail(row: ContainedService, pkg: string): string {
+  const pin = row.pinned_version ? `${pkg}@${row.pinned_version}` : pkg;
+  if (row.why === "before_window") {
+    return `${row.name} already had ${pin} before publish. A lockfile name grep still pages this team; HydraDB’s window does not.`;
+  }
+  if (row.why === "after_yank") {
+    return `${row.name} resolved ${pin} after the yank. The patched release is already in the lockfile.`;
+  }
+  if (row.why === "other_version") {
+    return `${row.name} resolved ${pin} inside the window — not the compromised version.`;
+  }
+  if (row.why === "no_pin") {
+    return `${row.name} never resolved ${pkg}.`;
+  }
+  return whyLabel(row.why);
 }

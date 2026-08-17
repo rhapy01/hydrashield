@@ -99,6 +99,7 @@ class Runtime:
             "ingested": self.ingested,
             "error": self.error,
             "require_hydradb": True,
+            "ingest": self.last_ingest,
         }
 
     def add_lockfile(self, parsed: dict[str, Any], **kwargs: Any) -> dict[str, Any]:

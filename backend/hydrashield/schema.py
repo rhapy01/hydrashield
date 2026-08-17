@@ -37,6 +37,7 @@ REL = {
     "has_release": "HAS_RELEASE",
     "depends_on": "DEPENDS_ON",
     "resolves": "RESOLVES",
+    "pins": "PINS",
     "has_lockfile": "HAS_LOCKFILE",
     "runs": "RUNS",
     "maintained_by": "MAINTAINED_BY",

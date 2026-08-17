@@ -308,6 +308,7 @@ class Ingestor:
     def _edges_lockfiles(self) -> None:
         docs = {doc["name"]: doc for doc in self.lockfile_docs()}
         rows = []
+        pin_rows = []
         for app in U.APPLICATIONS:
             parsed = docs.get(app["slug"])
             flattened = (
@@ -316,6 +317,7 @@ class Ingestor:
                 else U.resolve_tree(app["direct"], pin_signal=app.get("pin_signal"))
             )
             lock_id = self.ids.lookup("lockfile", app["slug"])
+            direct_names = set((parsed.get("direct") if parsed else None) or app.get("direct") or {})
             for name, version in flattened:
                 key = f"{name}@{version}"
                 try:
@@ -329,7 +331,16 @@ class Ingestor:
                         "rel": self.ids.get("edge", f"res:{app['slug']}:{key}"),
                     }
                 )
+                if name in direct_names:
+                    pin_rows.append(
+                        {
+                            "source": lock_id,
+                            "destination": dest,
+                            "rel": self.ids.get("edge", f"pin:{app['slug']}:{key}"),
+                        }
+                    )
         self._edges(REL["resolves"], rows, LABELS["lockfile"], LABELS["version"])
+        self._edges(REL["pins"], pin_rows, LABELS["lockfile"], LABELS["version"])
 
     def _edges_maintainers_infra(self) -> None:
         maint_rows = []
@@ -413,6 +424,8 @@ class Ingestor:
         self._edges(REL["has_lockfile"], [{"source": avid, "destination": lvid, "rel": self.ids.get("edge", f"lock:{name}")}], LABELS["application"], LABELS["lockfile"])
         self._edges(REL["in_org"], [{"source": svid, "destination": CATALOG, "rel": self.ids.get("edge", f"org:{name}")}], LABELS["service"], LABELS["catalog"])
         res_rows = []
+        pin_rows = []
+        direct_names = set((parsed.get("direct") or {}).keys())
         for item in parsed.get("packages") or []:
             key = f"{item['name']}@{item['version']}"
             try:
@@ -425,5 +438,8 @@ class Ingestor:
                     "n.name = row.name, n.version = row.version, n.slug = row.slug, n.published_at = row.published_at, n.yanked = row.yanked, n.compromised = row.compromised, n.kind = row.kind",
                 )
             res_rows.append({"source": lvid, "destination": dest, "rel": self.ids.get("edge", f"res:{name}:{key}")})
+            if item["name"] in direct_names:
+                pin_rows.append({"source": lvid, "destination": dest, "rel": self.ids.get("edge", f"pin:{name}:{key}")})
         self._edges(REL["resolves"], res_rows, LABELS["lockfile"], LABELS["version"])
+        self._edges(REL["pins"], pin_rows, LABELS["lockfile"], LABELS["version"])
         return {"name": name, "resolved_at": resolved_at, "packages": len(res_rows)}

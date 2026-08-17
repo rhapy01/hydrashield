@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>What HydraDB is — a 60-second picture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Syne:wght@800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #07090c;
+      --panel: #10161c;
+      --line: #22303c;
+      --text: #e6eef5;
+      --muted: #7d8d9c;
+      --accent: #3ee0b4;
+      --critical: #ff4d6d;
+      --info: #5aa7ff;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #07090c;
+      color: var(--text);
+      font-family: "IBM Plex Sans", sans-serif;
+    }
+    .stage {
+      min-height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 28px 32px 24px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 16px;
+    }
+    .brand {
+      font-family: Syne, sans-serif;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      font-size: 22px;
+    }
+    .brand span { color: var(--accent); }
+    .hint { color: var(--muted); font-size: 13px; }
+    .frame {
+      position: relative;
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #0c1015;
+      overflow: hidden;
+      min-height: 520px;
+    }
+    .caption {
+      position: absolute;
+      left: 28px;
+      right: 28px;
+      bottom: 24px;
+      z-index: 3;
+    }
+    .caption h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      font-weight: 600;
+      line-height: 1.25;
+      max-width: 28ch;
+    }
+    .caption p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      max-width: 46ch;
+      line-height: 1.45;
+    }
+    .sheet, .map {
+      position: absolute;
+      inset: 0;
+      padding: 36px 36px 140px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    th { color: var(--muted); font-weight: 500; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+    .sheet { opacity: 0; transform: translateY(8px); }
+    .map { opacity: 0; }
+    svg { width: 100%; height: 100%; }
+    .node { opacity: 0; }
+    .edge { stroke-dasharray: 8 10; stroke-dashoffset: 240; opacity: 0; }
+    .pulse {
+      transform-origin: 460px 250px;
+      transform-box: fill-box;
+    }
+    .walk { stroke-dasharray: 420; stroke-dashoffset: 420; }
+    .dim { opacity: 0.18; }
+    footer {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 16px;
+    }
+    button {
+      font: inherit;
+      cursor: pointer;
+      border: 1px solid #2c3d4c;
+      background: #141c24;
+      color: var(--text);
+      padding: 8px 14px;
+      border-radius: 8px;
+    }
+    button.primary {
+      background: var(--accent);
+      color: #06281e;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    .dots { display: flex; gap: 6px; margin-left: auto; }
+    .dots i {
+      width: 7px; height: 7px; border-radius: 99px; background: #2c3d4c; display: block;
+    }
+    .dots i.on { background: var(--accent); }
+    .scene-sheet .sheet { animation: fadein 0.8s ease forwards; }
+    .scene-map .sheet { animation: fadeout 0.7s ease forwards; }
+    .scene-map .map { animation: fadein 0.8s ease 0.2s forwards; }
+    .scene-map .node { animation: pop 0.5s ease forwards; }
+    .scene-map .n1 { animation-delay: 0.3s; }
+    .scene-map .n2 { animation-delay: 0.45s; }
+    .scene-map .n3 { animation-delay: 0.6s; }
+    .scene-map .n4 { animation-delay: 0.75s; }
+    .scene-map .n5 { animation-delay: 0.9s; }
+    .scene-map .n6 { animation-delay: 1.05s; }
+    .scene-lines .map { opacity: 1; }
+    .scene-lines .node { opacity: 1; }
+    .scene-lines .edge { animation: draw 1.2s ease forwards; opacity: 1; }
+    .scene-poison .map, .scene-walk .map, .scene-time .map, .scene-end .map { opacity: 1; }
+    .scene-poison .node, .scene-walk .node, .scene-time .node, .scene-end .node { opacity: 1; }
+    .scene-poison .edge, .scene-walk .edge, .scene-time .edge, .scene-end .edge { stroke-dashoffset: 0; opacity: 1; }
+    .scene-poison .bad { animation: alarm 0.9s ease infinite; }
+    .scene-walk .walk { animation: draw 1.4s ease forwards; }
+    .scene-walk .svc { animation: glow 0.6s ease 1.2s forwards; }
+    .scene-time .old { animation: fadeout 0.8s ease forwards; }
+    .scene-time .window { animation: fadein 0.6s ease forwards; }
+    .scene-end .ok { animation: fadein 0.5s ease forwards; }
+    @keyframes fadein { to { opacity: 1; transform: none; } }
+    @keyframes fadeout { to { opacity: 0; } }
+    @keyframes pop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    @keyframes alarm {
+      0%, 100% { r: 14; }
+      50% { r: 18; }
+    }
+    @keyframes glow { to { opacity: 1; } }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <header>
+      <div class="brand">Hydra<span>DB</span></div>
+      <div class="hint">A picture, not a lecture · space to replay</div>
+    </header>
+    <div class="frame" id="frame">
+      <div class="sheet">
+        <table>
+          <thead>
+            <tr><th>Service</th><th>Package</th><th>Version</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>checkout-api</td><td>signal-bus</td><td>2.4.1</td></tr>
+            <tr><td>ledger-worker</td><td>signal-bus</td><td>2.4.0</td></tr>
+            <tr><td>webhook-relay</td><td>signal-bus</td><td>2.4.2</td></tr>
+            <tr><td>fraud-service</td><td>signal-bus</td><td>2.4.1</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="map">
+        <svg viewBox="0 0 920 420" aria-hidden="true">
+          <text class="window" x="36" y="36" fill="#7d8d9c" font-size="13" opacity="0">Only the six minutes it was poisonous</text>
+          <line class="edge" x1="460" y1="250" x2="220" y2="120" stroke="#5aa7ff" stroke-width="2" />
+          <line class="edge" x1="460" y1="250" x2="700" y2="120" stroke="#5aa7ff" stroke-width="2" />
+          <line class="edge" x1="220" y1="120" x2="90" y2="250" stroke="#5aa7ff" stroke-width="2" />
+          <line class="edge" x1="700" y1="120" x2="830" y2="250" stroke="#5aa7ff" stroke-width="2" />
+          <line class="edge old" x1="460" y1="250" x2="460" y2="80" stroke="#7d8d9c" stroke-width="2" />
+          <path class="walk" d="M460 250 L220 120 L90 250" fill="none" stroke="#ff4d6d" stroke-width="3.5" />
+          <circle class="node n5 old" cx="460" cy="80" r="8" fill="#7d8d9c" />
+          <circle class="node n2" cx="220" cy="120" r="8" fill="#5aa7ff" />
+          <circle class="node n3" cx="700" cy="120" r="8" fill="#5aa7ff" />
+          <circle class="node n1 bad pulse" cx="460" cy="250" r="14" fill="#ff4d6d" />
+          <circle class="node n4 svc" cx="90" cy="250" r="9" fill="#3ee0b4" opacity="0.35" />
+          <circle class="node n6" cx="830" cy="250" r="9" fill="#3ee0b4" />
+          <text class="node n1" x="460" y="292" text-anchor="middle" fill="#ff4d6d" font-size="13">poisoned package</text>
+          <text class="node n2" x="220" y="100" text-anchor="middle" fill="#e6eef5" font-size="12">another package</text>
+          <text class="node n4 svc" x="90" y="278" text-anchor="middle" fill="#3ee0b4" font-size="12">checkout-api</text>
+          <text class="node n6" x="830" y="278" text-anchor="middle" fill="#3ee0b4" font-size="12">fraud-service</text>
+          <text class="node n5 old" x="460" y="64" text-anchor="middle" fill="#7d8d9c" font-size="12">old pin · yesterday</text>
+          <text class="ok" x="460" y="360" text-anchor="middle" fill="#3ee0b4" font-size="16" opacity="0">HydraDB walked the map. A list could not.</text>
+        </svg>
+      </div>
+      <div class="caption">
+        <h1 id="title">Most databases are lists.</h1>
+        <p id="sub">Rows of services and package names. Easy to search. Blind to routes.</p>
+      </div>
+    </div>
+    <footer>
+      <button class="primary" id="play" type="button">Play again</button>
+      <span class="hint" id="clock">0:00</span>
+      <div class="dots" id="dots"></div>
+    </footer>
+  </div>
+  <script>
+    const scenes = [
+      { cls: "scene-sheet", t: 0, title: "Most databases are lists.", sub: "Rows of services and package names. Easy to search. Blind to routes." },
+      { cls: "scene-map", t: 5200, title: "HydraDB is a map.", sub: "Every package, version, and service is a station. The lines are how they connect." },
+      { cls: "scene-lines", t: 11000, title: "The lines are the data.", sub: "“This service uses that package” is not a cell in a table. It is a track on the map." },
+      { cls: "scene-poison", t: 17500, title: "Then one station is poisoned.", sub: "A bad version goes live. You don’t need similar words. You need every train that ran through here." },
+      { cls: "scene-walk", t: 24000, title: "HydraDB walks the tracks.", sub: "From the poison, follow the lines. checkout-api took this route. That is the blast." },
+      { cls: "scene-time", t: 31000, title: "Only while it was poisonous.", sub: "Yesterday’s pin does not count. After the yank does not count. The map has a clock." },
+      { cls: "scene-end", t: 38000, title: "That is HydraDB.", sub: "Not a spreadsheet. Not a search engine. A map you can walk when the worm hits." },
+    ];
+    const frame = document.getElementById("frame");
+    const title = document.getElementById("title");
+    const sub = document.getElementById("sub");
+    const clock = document.getElementById("clock");
+    const dots = document.getElementById("dots");
+    scenes.forEach((_, i) => {
+      const el = document.createElement("i");
+      if (i === 0) el.classList.add("on");
+      dots.appendChild(el);
+    });
+    let timers = [];
+    let tick;
+    function clear() { timers.forEach(clearTimeout); timers = []; clearInterval(tick); }
+    function go() {
+      clear();
+      const start = Date.now();
+      tick = setInterval(() => {
+        const s = Math.floor((Date.now() - start) / 1000);
+        clock.textContent = "0:" + String(Math.min(s, 45)).padStart(2, "0");
+      }, 200);
+      scenes.forEach((scene, i) => {
+        timers.push(setTimeout(() => {
+          frame.className = "frame " + scene.cls;
+          title.textContent = scene.title;
+          sub.textContent = scene.sub;
+          [...dots.children].forEach((d, j) => d.classList.toggle("on", j === i));
+        }, scene.t));
+      });
+    }
+    document.getElementById("play").onclick = go;
+    window.addEventListener("keydown", (e) => { if (e.code === "Space") { e.preventDefault(); go(); } });
+    go();
+  </script>
+</body>
+</html>

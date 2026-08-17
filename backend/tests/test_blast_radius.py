@@ -1,3 +1,4 @@
+from hydrashield.analyze import pin_first_sources, prefer_evidence_path
 from hydrashield.lockfiles import parse_lockfile
 from hydrashield.ranking import exposure_score, rank_services
 from hydrashield.remediation import remediation_plan
@@ -54,6 +55,19 @@ def test_path_explains_checkout_api() -> None:
     assert path[0][0] == "payments-core"
     assert path[-1] == ("signal-bus", "2.4.1")
     assert shortest_depth(app["direct"], ("signal-bus", "2.4.1")) >= 2
+
+
+def test_evidence_starts_at_package_json_pin() -> None:
+    """Flattened RESOLVES includes telemetry-kit; PINS must win so checkout isn't a 1-hop lie."""
+    telemetry, payments, express, bad = 11, 22, 33, 99
+    assert pin_first_sources([payments, express], [telemetry, payments, express, bad], bad) == [payments, express]
+    assert pin_first_sources([], [telemetry, bad], bad) == [telemetry, bad]
+
+
+def test_equal_length_paths_prefer_stable_names() -> None:
+    telemetry = [("payments-core", 1), ("telemetry-kit", 2), ("signal-bus", 3)]
+    router = [("payments-core", 1), ("event-router", 4), ("signal-bus", 3)]
+    assert prefer_evidence_path([telemetry, router]) == [1, 4, 3]
 
 
 def test_temporal_window_splits_fleet() -> None:
@@ -248,9 +262,30 @@ def test_report_includes_track_answers() -> None:
 
 
 def test_contained_reasons() -> None:
-    from hydrashield.analyze import _why_contained
+    from hydrashield.analyze import _why_contained, compact_query_log
 
     t0, t1 = INCIDENT["published_ts"], INCIDENT["yanked_ts"]
     assert _why_contained({"version": "2.4.0", "resolved_at": t0 - 60}, "2.4.1", t0, t1) == "before_window"
     assert _why_contained({"version": "2.4.2", "resolved_at": t1 + 60}, "2.4.1", t0, t1) == "after_yank"
     assert _why_contained(None, "2.4.1", t0, t1) == "no_pin"
+    names = [row["name"] for row in compact_query_log(
+        [
+            {"name": "neighbors", "cypher": "x"},
+            {"name": "lockfile_pins", "cypher": "a"},
+            {"name": "lockfile_pins", "cypher": "b"},
+            {"name": "ms_paths", "cypher": "m"},
+            {"name": "services", "cypher": "s"},
+        ]
+    )]
+    assert "neighbors" not in names
+    assert names[0] == "lockfile_pins"
+    assert names.count("lockfile_pins") == 1
+    assert "ms_paths" in names
+
+
+def test_path_engine_does_not_claim_failed_ms() -> None:
+    from hydrashield.analyze import _path_engine
+
+    assert _path_engine([{"name": "ms_paths", "row_count": 4, "parameters": {}}]) == "ms_paths"
+    assert _path_engine([{"name": "ms_paths", "row_count": 0, "parameters": {"error": "400"}}]) == "sp_path"
+    assert _path_engine([{"name": "sp_path", "row_count": 1, "parameters": {}}]) == "sp_path"

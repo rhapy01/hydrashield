@@ -2,8 +2,6 @@ name: Live demo
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 concurrency:
   group: live-demo
@@ -91,6 +89,7 @@ jobs:
           echo "HydraDB is running in this job. Click Ingest + analyze if the graph is empty." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "This URL stays up until the workflow is cancelled or times out (90 minutes)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Prefer the always-on demo: https://rhapy01-hydrashield.fly.dev" >> "$GITHUB_STEP_SUMMARY"
           echo "Public demo URL: $URL"
           echo "::notice title=HydraShield live demo::$URL"
           gh api --method POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
