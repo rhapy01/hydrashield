@@ -35,4 +35,4 @@ ENV PYTHONPATH=/app \
     RUST_MIN_STACK=33554432
 
 EXPOSE 8080
-CMD ["/start.sh"]
+ENTRYPOINT ["/start.sh"]

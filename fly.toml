@@ -6,6 +6,10 @@ primary_region = "iad"
 [build]
   dockerfile = "deploy/Dockerfile"
 
+[env]
+  GRAPH_ALLOW_PLAINTEXT = "true"
+  RUST_MIN_STACK = "33554432"
+
 [http_service]
   internal_port = 8080
   force_https = true
